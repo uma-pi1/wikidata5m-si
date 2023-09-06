@@ -1,0 +1,10 @@
+import: [lookup_embedder]
+
+ocomplex:
+  class_name: OComplEx
+  entity_embedder:
+    type: lookup_embedder
+    +++: +++
+  relation_embedder:
+    type: lookup_embedder
+    +++: +++

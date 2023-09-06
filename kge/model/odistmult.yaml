@@ -1,0 +1,10 @@
+import: [lookup_embedder]
+
+odistmult:
+  class_name: ODistMult
+  entity_embedder:
+    type: lookup_embedder
+    +++: +++
+  relation_embedder:
+    type: lookup_embedder
+    +++: +++
