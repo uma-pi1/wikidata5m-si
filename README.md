@@ -2,9 +2,9 @@
 
 This is the benchmark, code, and configuration accompanying the paper [A Benchmark for Semi-Inductive Link Prediction in Knowledge Graphs]().
 
-## DistMult + ERAvg
+## ComplEx + Bias + FoldIn
 
-This branch holds the code for the model DistMult + ERAvg.
+This branch holds the code for the model ComplEx + Bias + FoldIn.
 It is an extension of [LibKGE](https://github.com/uma-pi1/kge),
 
 ### Setup
@@ -12,7 +12,7 @@ It is an extension of [LibKGE](https://github.com/uma-pi1/kge),
 ```
 git clone https://github.com/uma-pi1/wikidata5m-si.git
 cd wikidata5m-si
-git checkout odistmult
+git checkout complex_fold_in
 pip install -e .
 ```
 
@@ -28,7 +28,7 @@ tar -zxvf wikidata5m_v3_semi_inductive.tar.gz
 ### Training
 
 ```
-python -m kge start config_distmult_eravg.yaml
+python -m kge start config_complex_bias_foldin.yaml
 ```
 
 ### Evaluation

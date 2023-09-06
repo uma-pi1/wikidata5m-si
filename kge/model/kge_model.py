@@ -660,7 +660,7 @@ class KgeModel(KgeBase):
     def get_scorer(self) -> RelationalScorer:
         return self._scorer
 
-    def score_spo(self, s: Tensor, p: Tensor, o: Tensor, direction=None, unseen_mask: Optional[Tensor] = None, ctx=None) -> Tensor:
+    def score_spo(self, s: Tensor, p: Tensor, o: Tensor, direction=None) -> Tensor:
         r"""Compute scores for a set of triples.
 
         `s`, `p`, and `o` are vectors of common size :math:`n`, holding the indexes of
@@ -679,7 +679,7 @@ class KgeModel(KgeBase):
         o = self.get_o_embedder().embed(o)
         return self._scorer.score_emb(s, p, o, combine="spo").view(-1)
 
-    def score_sp(self, s: Tensor, p: Tensor, o: Tensor = None, unseen_mask: Optional[Tensor] = None, ctx=None) -> Tensor:
+    def score_sp(self, s: Tensor, p: Tensor, o: Tensor = None, super_only = False) -> Tensor:
         r"""Compute scores for triples formed from a set of sp-pairs and all (or a subset of the) objects.
 
         `s` and `p` are vectors of common size :math:`n`, holding the indexes of the
@@ -695,13 +695,16 @@ class KgeModel(KgeBase):
         s = self.get_s_embedder().embed(s)
         p = self.get_p_embedder().embed(p)
         if o is None:
-            o = self.get_o_embedder().embed_all()
+            if super_only:
+                o = self.get_o_embedder().embed_super_all()
+            else:
+                o = self.get_o_embedder().embed_all()
         else:
             o = self.get_o_embedder().embed(o)
 
         return self._scorer.score_emb(s, p, o, combine="sp_")
 
-    def score_po(self, p: Tensor, o: Tensor, s: Tensor = None, unseen_mask: Optional[Tensor] = None, ctx=None) -> Tensor:
+    def score_po(self, p: Tensor, o: Tensor, s: Tensor = None, super_only = False) -> Tensor:
         r"""Compute scores for triples formed from a set of po-pairs and (or a subset of the) subjects.
 
         `p` and `o` are vectors of common size :math:`n`, holding the indexes of the
@@ -716,7 +719,10 @@ class KgeModel(KgeBase):
         """
 
         if s is None:
-            s = self.get_s_embedder().embed_all()
+            if super_only:
+                s = self.get_s_embedder().embed_super_all()
+            else:
+                s = self.get_s_embedder().embed_all()
         else:
             s = self.get_s_embedder().embed(s)
         o = self.get_o_embedder().embed(o)

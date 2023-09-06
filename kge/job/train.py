@@ -83,6 +83,7 @@ class TrainingJob(TrainingOrEvaluationJob):
         self.trace_batch: bool = self.config.get("train.trace_level") == "batch"
         self.epoch: int = 0
         self.is_forward_only = forward_only
+        self.is_few_shot_only = False
 
         if not self.is_forward_only:
             self.model.train()
@@ -143,8 +144,8 @@ class TrainingJob(TrainingOrEvaluationJob):
             raise Exception(
                 f"{self.__class__.__name__} was initialized for forward only. You can only call run_epoch()"
             )
-        #if self.epoch == 0:
-        #    self.save(self.config.checkpoint_file(0))
+        if self.epoch == 0:
+            self.save(self.config.checkpoint_file(0))
 
         self.config.log("Starting training...")
         checkpoint_every = self.config.get("train.checkpoint.every")
@@ -215,10 +216,8 @@ class TrainingJob(TrainingOrEvaluationJob):
             # validate
             lr_metric = None
             if (
-                    (self.config.get("valid.every") > 0
-                     and self.epoch % self.config.get("valid.every") == 0)
-                    or (self.epoch == self.config.get("train.max_epochs")
-                        and self.config.get("valid.last"))
+                self.config.get("valid.every") > 0
+                and self.epoch % self.config.get("valid.every") == 0
             ):
                 self.valid_job.epoch = self.epoch
                 trace_entry = self.valid_job.run()
@@ -275,6 +274,8 @@ class TrainingJob(TrainingOrEvaluationJob):
 
     def save(self, filename) -> None:
         """Save current state to specified file"""
+        if self.is_few_shot_only:
+            return
         self.config.log("Saving checkpoint to {}...".format(filename))
         checkpoint = self.save_to({})
         torch.save(

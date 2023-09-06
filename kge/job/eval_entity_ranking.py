@@ -60,6 +60,10 @@ class EntityRankingJob(EvaluationJob):
 
         # create data and precompute indexes
         self.triples = self.dataset.split(self.config.get("eval.split"))
+        if self.train_few_shot:
+            self._prep_few_shot_dataset(
+                num_few_shots=self.config.get("eval.few_shot_args.num_shots")
+            )
         for split in self.filter_splits:
             self.dataset.index(f"{split}_sp_to_o")
             self.dataset.index(f"{split}_po_to_s")
@@ -488,6 +492,8 @@ class EntityRankingJob(EvaluationJob):
         self.current_trace["epoch"].update(
             dict(epoch_time=epoch_time, event="eval_completed", **metrics,)
         )
+        if self.train_few_shot:
+            self._unfreeze_and_reset_parameters()
 
     def _densify_chunk_of_labels(
         self, labels: torch.Tensor, chunk_start: int, chunk_end: int

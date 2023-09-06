@@ -1,4 +1,6 @@
+import gc
 import time
+import shutil
 import torch
 import numpy as np
 from tqdm import tqdm
@@ -50,6 +52,7 @@ class SemiInductiveEntityRankingJob(EvaluationJob):
         self.few_shot_creator = FewShotSetCreator(
             self.config.get("dataset.name"),
             split=self.config.get("eval.split"),
+            #use_inverse=True,
             use_inverse=False,
             context_selection=self.config.get("semi_inductive_entity_ranking.context_selection")
         )
@@ -93,6 +96,7 @@ class SemiInductiveEntityRankingJob(EvaluationJob):
 
     #@torch.no_grad()
     def _evaluate(self):
+
         # create initial trace entry
         self.current_trace["epoch"] = dict(
             type="semi_inductive_entity_ranking",
@@ -113,53 +117,39 @@ class SemiInductiveEntityRankingJob(EvaluationJob):
         head_ranks = list()
         tail_ranks = list()
         for batch_number, batch in enumerate(tqdm(self.loader)):
-            context = batch["context"].to(self.device)
+            context = batch["context"] #.to(self.device)
             triple = batch["triple"].to(self.device)
-            inverse_mask = context[:, 2] == batch["unseen_entity"]
-            context[inverse_mask, 2] = context[inverse_mask, 0]
-            #context[inverse_mask, 0] = batch["unseen_entity"]
-            context = [context[:, [1, 2]]]
+            if self.num_shots > 0:
+                self._freeze_and_store_paramters()
+                self._train_few_shot(context)
             with torch.no_grad():
-                unseen_mask = torch.ones([1, ], dtype=torch.bool)
                 if batch["unseen_slot"] == 0:
                     scores = self.model.score_sp(
                         s=triple[0].unsqueeze(0).view(1,),
-                        p=triple[1].unsqueeze(0).view(1,),
-                        unseen_mask=unseen_mask,
-                        ctx=context,
-                    )
-                    true_score = self.model.score_spo(
-                        s=triple[0].unsqueeze(0).view(1, ),
-                        p=triple[1].unsqueeze(0).view(1, ),
-                        o=triple[2].unsqueeze(0).view(1, ),
-                        direction="o",
-                        unseen_mask=unseen_mask,
-                        ctx=context,
+                        p=triple[1].unsqueeze(0).view(1,)
                     )
                 else:
                     scores = self.model.score_po(
                         p=triple[1].unsqueeze(0).view(1,),
-                        o=triple[2].unsqueeze(0).view(1,),
-                        unseen_mask=unseen_mask,
-                        ctx=context,
+                        o=triple[2].unsqueeze(0).view(1,)
                     )
-                    true_score = self.model.score_spo(
-                        s=triple[0].unsqueeze(0).view(1, ),
-                        p=triple[1].unsqueeze(0).view(1, ),
-                        o=triple[2].unsqueeze(0).view(1, ),
-                        direction="s",
-                        unseen_mask=unseen_mask,
-                        ctx=context,
-                    )
+                true_score = self.model.score_spo(
+                    s=triple[0].unsqueeze(0).view(1, ),
+                    p=triple[1].unsqueeze(0).view(1, ),
+                    o=triple[2].unsqueeze(0).view(1, )
+                )
                 #true_score = scores[0, triple[2]]
                 num_higher = torch.sum(scores > true_score)
                 num_ties = torch.sum(scores == true_score)
                 rank = num_higher + num_ties // 2 + 1
+                print("rank", rank)
                 if batch["unseen_slot"] == 0:
                     tail_ranks.append(rank.item())
                 else:
                     head_ranks.append(rank.item())
                 ranks.append(rank.item())
+            if self.num_shots > 0:
+                self._unfreeze_and_reset_parameters()
 
         output = dict(
             event="eval_completed",
@@ -191,3 +181,59 @@ class SemiInductiveEntityRankingJob(EvaluationJob):
             output
         )
         print(output)
+
+    def _train_few_shot(self, few_shot_triples):
+        self.model.train()
+        self._freeze_and_store_paramters()
+        # split triples to few shot
+        # split by relationship type
+        few_shot_config = self.model.config.clone()
+        import tempfile
+        few_shot_config.log_folder = tempfile.mkdtemp(prefix="kge-")
+        few_shot_config.folder = few_shot_config.log_folder
+        few_shot_config.set("console.quiet", True)
+        few_shot_config.set("train.max_epochs", self.config.get("eval.few_shot_args.num_epochs"))
+        few_shot_config.set("train.checkpoint.keep", 0)
+        few_shot_config.set("train.checkpoint.every", 0)
+        few_shot_config.set("valid.every", 0)
+        few_shot_config.set("job.type", "train")
+        few_shot_config.set(
+            "train.optimizer.default.args.lr",
+            few_shot_config.get("train.optimizer.default.args.lr")/self.config.get("eval.few_shot_args.lr_reduction_factor")
+        )
+        few_shot_config.load_options(self.config.get("eval.few_shot_params"))
+
+        few_shot_train_job = Job.create(few_shot_config, model=self.model)
+        few_shot_train_job.dataset._triples[self.config.get("train.split")] = few_shot_triples
+        few_shot_train_job.is_few_shot_only = True
+        few_shot_train_job.run()
+        del few_shot_train_job
+        shutil.rmtree(few_shot_config.folder)
+        #torch.cuda.empty_cache()
+        gc.collect()
+        #torch.cuda.empty_cache()
+        self.model.eval()
+
+    def _freeze_and_store_paramters(self):
+        # freeze entity parameters
+        # (on relation we wont have changes anyways except for few shot)
+        self.model.get_s_embedder().partition_embedder._embeddings.weight.requires_grad = False
+        self.model.get_s_embedder().base_embedder._embeddings.weight.requires_grad = False
+
+        # freeze relation parameters
+        self.model.get_p_embedder()._embeddings.weight.requires_grad = False
+
+        # store previous new ent parameters
+        from copy import deepcopy
+        self.prev_unseen_parameters = deepcopy(self.model.get_s_embedder().unseen_embedding)
+
+    def _unfreeze_and_reset_parameters(self):
+        self.model.get_s_embedder().partition_embedder._embeddings.weight.requires_grad = True
+        self.model.get_s_embedder().base_embedder._embeddings.weight.requires_grad = True
+
+        # freeze relation parameters
+        self.model.get_p_embedder()._embeddings.weight.requires_grad = True
+
+        # restore unseen embedding
+        with torch.no_grad():
+            self.model.get_s_embedder().unseen_embedding[:] = self.prev_unseen_parameters[:]

@@ -8,6 +8,9 @@ from kge.job.train_negative_sampling import TrainingJobNegativeSampling
 from kge.job.eval import EvaluationJob
 from kge.job.eval_training_loss import TrainingLossEvaluationJob
 from kge.job.eval_entity_ranking import EntityRankingJob
+from kge.job.eval_entity_ranking_against import EntityRankingAgainstJob
+from kge.job.eval_entity_ranking_hash import EntityRankingHashJob
+from kge.job.eval_entity_ranking_nell import EntityRankingNellJob
 from kge.job.eval_entity_pair_ranking import EntityPairRankingJob
 from kge.job.eval_semi_inductive import SemiInductiveEntityRankingJob
 from kge.job.search import SearchJob
@@ -15,4 +18,3 @@ from kge.job.search_grid import GridSearchJob
 from kge.job.search_manual import ManualSearchJob
 from kge.job.search_auto import AutoSearchJob
 from kge.job.search_ax import AxSearchJob
-from kge.job.search_grash import GraSHSearchJob

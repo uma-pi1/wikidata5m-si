@@ -1,48 +1,8 @@
 import torch
 import numba
-import os
-import copy
 import numpy as np
 from typing import Iterator, List, Tuple, Dict
-from kge import Config
 
-class Hop1Index:
-    def __init__(self, triples, num_entities, key_col=0):
-        self.shuffle = True
-        rev_triples = np.empty_like(triples)
-        rev_triples[:, 0] = np.copy(triples[:, 2])
-        rev_triples[:, 1] = np.copy(triples[:, 1])
-        rev_triples[:, 2] = np.copy(triples[:, 0])
-        self.triples = np.concatenate([triples, rev_triples])
-        self.triples = self.triples[self.triples[:, key_col].argsort()]
-        keys, values_offset = np.unique(
-            self.triples[:, key_col], axis=0, return_index=True
-        )
-        values_offset = np.append(values_offset, len(self.triples))
-        self.keys = keys
-        self.values_offset = values_offset
-        self.key_to_start = np.full([num_entities,], -1)
-        self.key_to_start[keys] = self.values_offset[:-1]
-        self.key_to_end = np.full([num_entities,], -1)
-        self.key_to_end[keys] = self.values_offset[1:]
-
-    def __getitem__(self, item):
-        start = self.key_to_start[item]
-        end = self.key_to_end[item]
-        #end = start + min(end-start, 100)
-        if end - start > 100:
-            samples = np.random.randint(start, end, 100)
-            context = self.triples[samples, 1:]
-        else:
-            context = self.triples[start:end, [1, 2]]
-            #np.random.shuffle(context)
-        #if self.shuffle:
-        #    context = np.copy(context)
-        #    np.random.shuffle(context)
-        return context
-
-    def get(self, item):
-        return self[item]
 
 class KvsAllIndex:
     """Construct an index from keys (e.g., sp) to all its values (o).
@@ -395,28 +355,6 @@ def index_frequency_percentiles(dataset, recompute=False):
             result[arg][percentile] = set(stats[int(begin * num) : int(end * num)])
     dataset._indexes["frequency_percentiles"] = result
 
-def index_1hop(dataset):
-    print("creating 1 Hop Index")
-    hop_index = Hop1Index(
-        dataset.split("train"),
-        dataset.num_entities(),
-    )
-    dataset._indexes["1hop"] = hop_index
-    return dataset._indexes["1hop"]
-
-def index_k_core_manager(dataset):
-    """
-    Loads statistics about k-core subsets and performs a decomposition if this was not
-    done yet.
-    """
-    # import of method under util not possible at initialization so we do it here
-    from kge.util.subgraph import KCoreManager
-    # get k-core stats and perform decomposition if not done yet
-    k_core_manager = KCoreManager(dataset)
-    dataset._indexes["k-cores"] = k_core_manager
-    # do not pickle the k-cores index object
-    dataset._index_no_pickle.add("k-cores")
-
 
 class IndexWrapper:
     """Wraps a call to an index function so that it can be pickled"""
@@ -449,8 +387,22 @@ def create_default_index_functions(dataset: "Dataset"):
     dataset.index_functions["relation_types"] = index_relation_types
     dataset.index_functions["relations_per_type"] = index_relations_per_type
     dataset.index_functions["frequency_percentiles"] = index_frequency_percentiles
-    dataset.index_functions["1hop"] = index_1hop
-    dataset.index_functions["k-cores"] = index_k_core_manager
+
+    for obj in ["entity", "relation"]:
+        dataset.index_functions[f"{obj}_id_to_index"] = IndexWrapper(
+            _invert_ids, obj=obj
+        )
+
+
+def add_index_function(dataset: "Dataset", split: str):
+    for key, value in [("sp", "o"), ("po", "s"), ("so", "p")]:
+        # self assignment needed to capture the loop var
+        dataset.index_functions[f"{split}_{key}_to_{value}"] = IndexWrapper(
+            index_KvsAll, split=split, key=key
+        )
+    dataset.index_functions["relation_types"] = index_relation_types
+    dataset.index_functions["relations_per_type"] = index_relations_per_type
+    dataset.index_functions["frequency_percentiles"] = index_frequency_percentiles
 
     for obj in ["entity", "relation"]:
         dataset.index_functions[f"{obj}_id_to_index"] = IndexWrapper(

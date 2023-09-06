@@ -181,6 +181,7 @@ class Config:
 
         splits = key.split(".")
         data = self.options
+        ignore_unknown = os.getenv("KGE_IGNORE_UNKNOWN")
 
         # flatten path and see if it is valid to be set
         path = []
@@ -190,6 +191,13 @@ class Config:
             else:
                 if create:
                     data[splits[i]] = dict()
+                elif ignore_unknown:
+                    if i == 0:
+                        return None
+                    splits = splits[:(i - 1)]
+                    if len(splits) == 0:
+                        return None
+                    break
                 else:
                     msg = (
                         "Key '{}' cannot be set because key '{}' does not exist "
@@ -214,7 +222,7 @@ class Config:
             )
 
         if current_value is None:
-            if not create:
+            if not create and not ignore_unknown:
                 msg = (
                     f"Key '{key}' cannot be set because it does not exist and "
                     "no new keys are allowed to be created "
@@ -777,9 +785,6 @@ def _process_deprecated_options(options: Dict[str, Any]):
                 if rename_value(key, old_value, new_value):
                     renamed_keys.add(key)
         return renamed_keys
-
-    # 12.09.22
-    rename_key("train.auto_correct", "job.auto_correct")
 
     # 08.09.21
     rename_key("entity_ranking.tie_handling", "entity_ranking.tie_handling.type")

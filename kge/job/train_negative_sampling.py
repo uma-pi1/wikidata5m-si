@@ -1,6 +1,4 @@
 import time
-
-import numpy as np
 import torch
 import torch.utils.data
 
@@ -23,13 +21,13 @@ class TrainingJobNegativeSampling(TrainingJob):
         )
         self._sampler = KgeSampler.create(config, "negative_sampling", dataset)
         self.type_str = "negative_sampling"
-        self.unseen_percentage = 0.2
+        self.score_super = config.get("negative_sampling.score_super")
+        self.score_super_warmup = config.get("negative_sampling.score_super_args.warmup")
+        self.score_super_k = config.get("negative_sampling.score_super_args.k")
 
         if self.__class__ == TrainingJobNegativeSampling:
             for f in Job.job_created_hooks:
                 f(self)
-
-        self.entity_degrees = torch.from_numpy(np.bincount(self.dataset.split("train")[:, [0, 2]].view(-1), minlength=self.dataset.num_entities()))
 
     def _prepare(self):
         super()._prepare()
@@ -80,46 +78,26 @@ class TrainingJobNegativeSampling(TrainingJob):
             # labels = torch.zeros((len(batch), self._sampler.num_negatives_total + 1))
             # labels[:, 0] = 1
             # labels = labels.view(-1)
-            selected_unseen_s = torch.randint(0, len(triples), [int(len(triples)*self.unseen_percentage),])
-            degree_one_or_zero_mask = self.entity_degrees[selected_unseen_s] <= 1
-            selected_unseen_s = selected_unseen_s[~degree_one_or_zero_mask]
-            selected_unseen_o = torch.randint(0, len(triples), [int(len(triples)*self.unseen_percentage),])
-            degree_one_or_zero_mask = self.entity_degrees[selected_unseen_o] <= 1
-            selected_unseen_o = selected_unseen_o[~degree_one_or_zero_mask]
-            unseen_mask_s = torch.zeros([len(triples),], dtype=torch.bool)
-            unseen_mask_o = torch.zeros([len(triples),], dtype=torch.bool)
-            unseen_mask_s[selected_unseen_s.long()] = True
-            unseen_mask_o[selected_unseen_o.long()] = True
-            unseen_s = triples[unseen_mask_s, 0]
-            unseen_o = triples[unseen_mask_o, 2]
-            all_ctx_s = list()
-            all_ctx_o = list()
-            for i, ent in enumerate(unseen_s):
-                ctx_s = torch.from_numpy(self.dataset.index("1hop").get(ent))
-                #ctx_s = ctx_s[torch.randperm(len(ctx_s)).long()]
-                #ctx_s = ctx_s[:100]
-                if len(ctx_s) == 0:
-                    print("problem")
-                all_ctx_s.append(ctx_s)
-            for i, ent in enumerate(unseen_o):
-                ctx_o = torch.from_numpy(self.dataset.index("1hop").get(ent))
-                #ctx_o = ctx_o[torch.randperm(len(ctx_o)).long()]
-                #ctx_o = ctx_o[:100]
-                if len(ctx_o) == 0:
-                    print("problem")
-                all_ctx_o.append(ctx_o)
 
             negative_samples = list()
             for slot in [S, P, O]:
                 negative_samples.append(self._sampler.sample(triples, slot))
-            return {
-                "triples": triples,
-                "negative_samples": negative_samples,
-                "unseen_mask_s": unseen_mask_s,
-                "unseen_mask_o": unseen_mask_o,
-                "ctx_s": all_ctx_s,
-                "ctx_o": all_ctx_o,
-            }
+
+            unique_time = -time.time()
+            unique_entities = torch.unique(
+                torch.cat(
+                    (
+                        triples[:, [S, O]].view(-1),
+                        #negative_samples[S].unique_samples(remove_dropped=False),
+                        #negative_samples[O].unique_samples(remove_dropped=False),
+                        negative_samples[S].unique_samples(),
+                        negative_samples[O].unique_samples(),
+                    )
+                )
+            )
+            unique_relations = torch.unique(triples[:, [P]].view(-1))
+            unique_time += time.time()
+            return {"triples": triples, "negative_samples": negative_samples, "unique_entities": unique_entities, "unique_relations": unique_relations}
 
         return collate
 
@@ -135,14 +113,6 @@ class TrainingJobNegativeSampling(TrainingJob):
         batch["negative_samples"] = [
             ns.to(self.device) for ns in batch["negative_samples"]
         ]
-        batch["ctx_s"] = [
-            ctx.to(self.device) for ctx in batch["ctx_s"]
-        ]
-        batch["ctx_o"] = [
-            ctx.to(self.device) for ctx in batch["ctx_o"]
-        ]
-        batch["unseen_mask_s"] = batch["unseen_mask_s"].to(self.device)
-        batch["unseen_mask_o"] = batch["unseen_mask_o"].to(self.device)
 
         batch["labels"] = [None] * 3  # reuse label tensors b/w subbatches
         result.size = len(batch["triples"])
@@ -167,15 +137,6 @@ class TrainingJobNegativeSampling(TrainingJob):
 
         # process the subbatch for each slot separately
         for slot in [S, P, O]:
-            if slot == S:
-                unseen_mask = batch["unseen_mask_o"]
-                ctx = batch["ctx_o"]
-            elif slot == O:
-                unseen_mask = batch["unseen_mask_s"]
-                ctx = batch["ctx_s"]
-            else:
-                unseen_mask = None
-                ctx = None
             num_samples = self._sampler.num_samples[slot]
             if num_samples <= 0:
                 continue
@@ -187,8 +148,15 @@ class TrainingJobNegativeSampling(TrainingJob):
                 1 + num_samples,
             ):
                 result.prepare_time -= time.time()
+                labels_size = (subbatch_size, 1 + num_samples)
+                num_super = 0
+                if self.score_super:
+                    num_super = self.model.get_s_embedder().num_partitions
+                    if self.epoch > self.score_super_warmup:
+                        num_super = self.score_super_k
+                    labels_size = (subbatch_size, 1 + num_samples + num_super)
                 labels[slot] = torch.zeros(
-                    (subbatch_size, 1 + num_samples), device=self.device
+                    labels_size, device=self.device
                 )
                 labels[slot][:, 0] = 1
                 result.prepare_time += time.time()
@@ -197,19 +165,36 @@ class TrainingJobNegativeSampling(TrainingJob):
             result.forward_time -= time.time()
             scores = torch.empty((subbatch_size, num_samples + 1), device=self.device)
             scores[:, 0] = self.model.score_spo(
-                triples[:, S], triples[:, P], triples[:, O], direction=SLOT_STR[slot], unseen_mask=unseen_mask, ctx=ctx,
+                triples[:, S], triples[:, P], triples[:, O], direction=SLOT_STR[slot],
             )
             result.forward_time += time.time()
             scores[:, 1:] = batch_negative_samples[slot].score(
-                self.model, indexes=subbatch_slice, unseen_mask=unseen_mask, ctx=ctx,
+                self.model, indexes=subbatch_slice
             )
+            # score additionally against super embeddings to update all entities
+            if self.score_super:
+                super_scores = None
+                if slot == S:
+                    super_scores = self.model.score_po(
+                        triples[:, P], triples[:, O], super_only=True
+                    )
+                elif slot == O:
+                    super_scores = self.model.score_sp(
+                        triples[:, S], triples[:, P], super_only=True
+                    )
+                if self.epoch > self.score_super_warmup and self.score_super_k > 0:
+                    super_scores, _ = torch.topk(
+                        super_scores, k=self.score_super_k, dim=1
+                    )
+                if super_scores is not None:
+                    scores = torch.cat((scores, super_scores), dim=1)
             result.forward_time += batch_negative_samples[slot].forward_time
             result.prepare_time += batch_negative_samples[slot].prepare_time
 
             # compute loss for slot in subbatch (concluding the forward pass)
             result.forward_time -= time.time()
             loss_value_torch = (
-                self.loss(scores, labels[slot], num_negatives=num_samples) / batch_size
+                self.loss(scores, labels[slot], num_negatives=num_samples + num_super) / batch_size
             )
             result.avg_loss += loss_value_torch.item()
             result.forward_time += time.time()
@@ -217,5 +202,5 @@ class TrainingJobNegativeSampling(TrainingJob):
             # backward pass for this slot in the subbatch
             result.backward_time -= time.time()
             if not self.is_forward_only:
-                loss_value_torch.backward()
+                loss_value_torch.backward(retain_graph=True)
             result.backward_time += time.time()

@@ -45,6 +45,8 @@ class AutoSearchJob(SearchJob):
         )
 
     def _load(self, checkpoint):
+        if self.config.get("search.is_few_shot_eval"):
+            return
         self.resumed_from_job_id = checkpoint.get("job_id")
         self.parameters = checkpoint["parameters"]
         self.results = checkpoint["results"]
@@ -149,6 +151,10 @@ class AutoSearchJob(SearchJob):
                 folder = str("{:05d}".format(trial_no))
                 config = self.config.clone(folder)
                 config.set("job.type", "train")
+                if self.config.get("search.is_few_shot_eval"):
+                    config.set("job.type", "eval")
+                    config.set("eval.few_shot", True)
+                    config.set("eval.split", self.config.get("search.few_shot_eval_args.split"))
                 config.set_all(_process_deprecated_options(copy.deepcopy(parameters)))
                 config.init_folder()
 

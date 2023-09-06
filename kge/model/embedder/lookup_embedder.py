@@ -25,14 +25,8 @@ class LookupEmbedder(KgeEmbedder):
 
         # read config
         self.normalize_p = self.get_option("normalize.p")
-        self.space = self.check_option("space", ["euclidean", "complex"])
-
-        # n3 is only accepted when space is complex
-        if self.space == "complex":
-            self.regularize = self.check_option("regularize", ["", "lp", "n3"])
-        else:
-            self.regularize = self.check_option("regularize", ["", "lp"])
-
+        self.cap_normalize = self.get_option("normalize.cap_normalize")
+        self.regularize = self.check_option("regularize", ["", "lp"])
         self.sparse = self.get_option("sparse")
         self.config.check("train.trace_level", ["batch", "epoch"])
         self.vocab_size = vocab_size
@@ -42,7 +36,9 @@ class LookupEmbedder(KgeEmbedder):
             self.dim = round_to_points(round_embedder_dim_to, self.dim)
 
         self._embeddings = torch.nn.Embedding(
-            self.vocab_size, self.dim, sparse=self.sparse,
+            self.vocab_size,
+            self.dim,
+            sparse=self.sparse,
         )
 
         if not init_for_load_only:
@@ -53,7 +49,7 @@ class LookupEmbedder(KgeEmbedder):
         # TODO handling negative dropout because using it with ax searches for now
         dropout = self.get_option("dropout")
         if dropout < 0:
-            if config.get("job.auto_correct"):
+            if config.get("train.auto_correct"):
                 config.log(
                     "Setting {}.dropout to 0., "
                     "was set to {}.".format(configuration_key, dropout)
@@ -63,10 +59,24 @@ class LookupEmbedder(KgeEmbedder):
 
     def _normalize_embeddings(self):
         if self.normalize_p > 0:
+            if self.cap_normalize:
+                self._cap_normalize_embeddings()
+            else:
+                with torch.no_grad():
+                    self._embeddings.weight.data = torch.nn.functional.normalize(
+                        self._embeddings.weight.data, p=self.normalize_p, dim=-1
+                    )
+
+    def _cap_normalize_embeddings(self):
+        if self.normalize_p > 0:
             with torch.no_grad():
-                self._embeddings.weight.data = torch.nn.functional.normalize(
+                embedding_norm = torch.norm(
                     self._embeddings.weight.data, p=self.normalize_p, dim=-1
                 )
+                norm_mask = (embedding_norm > 1).view(-1)
+                self._embeddings.weight.data[norm_mask] = self._embeddings.weight.data[
+                    norm_mask
+                ] / embedding_norm[norm_mask].view(-1, 1)
 
     def prepare_job(self, job: Job, **kwargs):
         from kge.job import TrainingJob
@@ -93,8 +103,11 @@ class LookupEmbedder(KgeEmbedder):
             self._embeddings.weight.device
         )
 
+    def _embed(self, indexes: Tensor) -> Tensor:
+        return self._embeddings(indexes.long())
+
     def embed(self, indexes: Tensor) -> Tensor:
-        return self._postprocess(self._embeddings(indexes.long()))
+        return self._postprocess(self._embed(indexes.long()))
 
     def embed_all(self) -> Tensor:
         return self._postprocess(self._embeddings_all())
@@ -114,31 +127,23 @@ class LookupEmbedder(KgeEmbedder):
     def _get_regularize_weight(self) -> Tensor:
         return self.get_option("regularize_weight")
 
-    def _abs_complex(self, parameters) -> Tensor:
-        parameters_re, parameters_im = (t.contiguous() for t in parameters.chunk(2, dim=1))
-        parameters = torch.sqrt(parameters_re ** 2 + parameters_im ** 2 + 1e-14) # + 1e-14 to avoid NaN: https://github.com/lilanxiao/Rotated_IoU/issues/20
-        return parameters
-
     def penalty(self, **kwargs) -> List[Tensor]:
         # TODO factor out to a utility method
         result = super().penalty(**kwargs)
+        if not self._embeddings.weight.requires_grad:
+            return result
         if self.regularize == "" or self.get_option("regularize_weight") == 0.0:
             pass
-        elif self.regularize in ["lp", 'n3']:
-            if self.regularize == "n3":
-                p = 3
-            else:
-                p = (
-                    self.get_option("regularize_args.p")
-                    if self.has_option("regularize_args.p")
-                    else 2
-                )
+        elif self.regularize == "lp":
+            p = (
+                self.get_option("regularize_args.p")
+                if self.has_option("regularize_args.p")
+                else 2
+            )
             regularize_weight = self._get_regularize_weight()
             if not self.get_option("regularize_args.weighted"):
                 # unweighted Lp regularization
                 parameters = self._embeddings_all()
-                if self.regularize == "n3" and self.space == 'complex':
-                    parameters = self._abs_complex(parameters)
                 result += [
                     (
                         f"{self.configuration_key}.L{p}_penalty",
@@ -151,11 +156,7 @@ class LookupEmbedder(KgeEmbedder):
                     kwargs["indexes"], return_counts=True
                 )
                 parameters = self._embeddings(unique_indexes)
-
-                if self.regularize == "n3" and self.space == 'complex':
-                    parameters = self._abs_complex(parameters)
-
-                if (p % 2 == 1) and (self.regularize != "n3"):
+                if p % 2 == 1:
                     parameters = torch.abs(parameters)
                 result += [
                     (

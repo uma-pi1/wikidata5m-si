@@ -125,7 +125,10 @@ def _run_train_job(sicnk, device=None):
                 train_job_config.get("job.device"),
             )
         )
-        checkpoint_file = get_checkpoint_file(train_job_config)
+        if search_job.config.get("search.is_few_shot_eval"):
+            checkpoint_file = get_checkpoint_file(search_job.config, "best")
+        else:
+            checkpoint_file = get_checkpoint_file(train_job_config)
         if checkpoint_file is not None:
             checkpoint = load_checkpoint(
                 checkpoint_file, train_job_config.get("job.device")
@@ -148,6 +151,8 @@ def _run_train_job(sicnk, device=None):
         valid_trace = []
 
         def copy_to_search_trace(job, trace_entry=None):
+            if job.config.get("search.is_few_shot_eval") or True:
+                return
             if trace_entry is None:
                 trace_entry = job.valid_trace[-1]
             trace_entry = copy.deepcopy(trace_entry)
@@ -172,8 +177,9 @@ def _run_train_job(sicnk, device=None):
             search_job.config.trace(**trace_entry)
             valid_trace.append(trace_entry)
 
-        for trace_entry in job.valid_trace:
-            copy_to_search_trace(None, trace_entry)
+        if not job.config.get("search.is_few_shot_eval"):
+            for trace_entry in job.valid_trace:
+                copy_to_search_trace(None, trace_entry)
 
         # run the job (adding new trace entries as we go)
         # TODO make this less hacky (easier once integrated into SearchJob)
@@ -182,7 +188,8 @@ def _run_train_job(sicnk, device=None):
         if not isinstance(search_job, ManualSearchJob) or search_job.config.get(
             "manual_search.run"
         ):
-            job.post_valid_hooks.append(copy_to_search_trace)
+            if not job.config.get("search.is_few_shot_eval"):
+                job.post_valid_hooks.append(copy_to_search_trace)
             job.run()
         else:
             search_job.config.log(
@@ -200,19 +207,20 @@ def _run_train_job(sicnk, device=None):
                 best = trace_entry
                 best_metric = metric
 
-        # record the best result of this job
-        best["child_job_id"] = best["job_id"]
-        for k in ["job", "job_id", "type", "parent_job_id", "scope", "event"]:
-            if k in best:
-                del best[k]
-        search_job.trace(
-            event="search_completed",
-            echo=True,
-            echo_prefix="  ",
-            log=True,
-            scope="train",
-            **best,
-        )
+        if not job.config.get("search.is_few_shot_eval"):
+            # record the best result of this job
+            best["child_job_id"] = best["job_id"]
+            for k in ["job", "job_id", "type", "parent_job_id", "scope", "event"]:
+                if k in best:
+                    del best[k]
+            search_job.trace(
+                event="search_completed",
+                echo=True,
+                echo_prefix="  ",
+                log=True,
+                scope="train",
+                **best,
+            )
 
         # force releasing the GPU memory of the job to avoid memory leakage
         del job
