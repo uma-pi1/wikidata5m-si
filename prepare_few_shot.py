@@ -9,9 +9,9 @@ from tqdm import tqdm
 class FewShotSetCreator:
     def __init__(
             self,
-            dataset_name="wikidata5m_v3_semi_inductive",
+            dataset_name="wikidata-semi-inductive",
             split="valid",
-            use_inverse=False,
+            use_inverse=True,
             context_selection="most_common",
     ):
         self.dataset_name = dataset_name
@@ -81,7 +81,7 @@ class FewShotSetCreator:
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", "-d", type=str, default="wikidata5m_v3_semi_inductive")
+    parser.add_argument("--dataset", "-d", type=str, default="wikidata5m-semi-inductive")
     parser.add_argument("--split", "-s", type=str, default="valid")
     parser.add_argument("--num_shots", "-k", type=int, default=10)
     args = parser.parse_args()

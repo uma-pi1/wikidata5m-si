@@ -1,17 +1,20 @@
-# A Benchmark for Semi-Inductive Link Prediction in Knowledge Graphs
+# KGT5-context
 
-This is the benchmark, code, and configuration accompanying the paper [A Benchmark for Semi-Inductive Link Prediction in Knowledge Graphs]().
-The main branch holds code/information about the benchmark itself. 
-The following branches hold code and configuration for the separate models evaluated in the study.
-
-- [KGT5 \& KGT5-context]()
-- [ComplEx + Bias + FoldIn \& DisMult ERAvg]()
-- [HittER]()
+This is an extension of the model [KGT5-context]() for semi-inductive link prediction.
 
 
-## Benchmark
+## Getting Started
 
-### Download data
+```
+git clone git@github.com:uma-pi1/wikidata5m-si.git
+cd wikidata5m-si
+git checkout kgt5-context
+conda create -n kgt5 python==3.10
+conda activate kgt5
+pip install -r requirements.txt
+```
+
+### Download Data
 
 ```
 mkdir data
@@ -20,47 +23,65 @@ curl -O https://web.informatik.uni-mannheim.de/pi1/kge-datasets/wikidata5m_v3_se
 tar -zxvf wikidata5m_v3_semi_inductive.tar.gz
 ```
 
-### Generate Few Shot Tasks
 
-- use the file `prepare_few_shot.py`
-- create a `few_shot_set_creator` object
-	- `dataset_name`: (str) name of the dataset
-      - default: wikidata5m_v3_semi_inductive
-	- `use_invese`: (bool) whether to use inverse relations
-      - default: False
-      - if True: for all triples where the unseen entity is in the object slot, increase relation id by num-relations and invert triple
-	- `split`: (str) which split to use
-      - default: valid
-	- `context_selection`: (str) which context\_selection technique to use
-      - default: most\_common
-      - options: most\_common, least\_common, random
+## Reproduction
+
+### Training
+
+To train the KGT5-context on Wikidata5M-SI, run the following command.
+Note, this library will automatically use all available GPUs.
+You can control the GPUs used with the environment variable `CUDA_VISIBLE_DEVICES=0,1,2,3`
 
 ```
-few_shot_set_creator = FewShotSetCreator(
-	dataset_name="wikidata5m_v3_semi_inductive",
-	use_inverse=True,
-	split="test"
-)
+python main_kgt5.py dataset.name=wikidata5m_v3_semi_inductive train.max_epochs=6
 ```
 
-- generate the data using the `few_shot_set_creator`
-	- `num_shots`: (int) the number of shots to use (between 0 and 10)
+If you want to utilize descriptions (provided with the dataset), run
 
 ```
-data = few_shot_set_creator.create_few_shot_dataset(num_shots=5)
+python main.py dataset.name=wikidata5m_v3 train.max_epochs=6 descriptions.use=True
 ```
 
-- evaluation is performed in direction unseen to seen
-- output format looks like this
-```
-[
-{
-	"unseen_entity": <id of unseen entity>,
-	"unseen_slot": <slot of unseen entity: 0 for head/subject, 2 for tail/object>,
-	"triple: <[s, p, o]>,
-	"context: <[unseen_entity_id, unseen_entity_slot, s, p, o]>
-},
-...
+If you want to use context-hiding during training, run
 
-]
+```
+python main_kgt5.py dataset.name=wikidata5m_v3_semi_inductive train.max_epochs=6 train.context.dropout.percentage=0.5
+```
+
+If you want to train the original KGT5 without context use
+
+```
+python main_kgt5.py dataset=wikidata5m dataset.v1=True
+```
+
+### Evaluation
+
+#### Transductive
+
+To evaluate the model in a transductive setting run
+
+```
+python eval.py --config <path to config> --model <path to trained model>
+```
+
+#### Semi-Inductive
+
+To evaluate the model in a semi-inductive setting run
+
+```
+python eval_few_shot.py --config <path to config> --model <path to trained model> --num_shots <num shots> --context selection <context selection>
+```
+
+To evaluate all semi-inductive settings run
+
+```
+python eval_all_few_shot.py --config <path to config> --model <path to trained model> --num_shots <num shots> --context selection <context selection>
+```
+
+## Wandb
+This library supports logging via wandb.
+If you want to use it use the option `use_wandb=True`
+
+Note, output directory and wandb project name are defined in the file conf/config.yaml.
+
 
