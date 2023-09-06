@@ -2,6 +2,7 @@ import: [lookup_embedder]
 
 odistmult:
   class_name: ODistMult
+  mentions_only: False
   entity_embedder:
     type: lookup_embedder
     +++: +++

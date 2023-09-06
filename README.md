@@ -25,10 +25,22 @@ curl -O https://web.informatik.uni-mannheim.de/pi1/kge-datasets/wikidata5m_v3_se
 tar -zxvf wikidata5m_v3_semi_inductive.tar.gz
 ```
 
+#### Download mention and description embedding
+
+```
+cd data/wikidata5m_v3_semi_inductive
+curl -O https://web.informatik.uni-mannheim.de/pi1/kge-datasets/wikidata5m-si/description_embs.pt
+curl -O https://web.informatik.uni-mannheim.de/pi1/kge-datasets/wikidata5m-si/mention_embs.pt
+```
+
 ### Training
 
 ```
-python -m kge start config_distmult_eravg.yaml
+python -m kge start config_distmult_eravg_mentions.yaml
+```
+
+```
+python -m kge start config_distmult_eravg_descriptions.yaml
 ```
 
 ### Evaluation

@@ -1,3 +1,4 @@
+import os
 
 import torch
 from torch import Tensor
@@ -24,6 +25,21 @@ class ODistMult(KgeModel):
             configuration_key=configuration_key,
             init_for_load_only=init_for_load_only,
         )
+        print("loading descriptions")
+        if self.get_option("mentions_only"):
+            self.register_buffer("descriptions", torch.load(os.path.join(self.dataset.folder, "mentions_embs.pt")))
+        else:
+            self.register_buffer("descriptions", torch.load(os.path.join(self.dataset.folder, "descriptions_embs.pt")))
+        print("descriptions loaded")
+        self.descriptions.requires_grad = False
+        self.projection = torch.nn.Linear(self.get_s_embedder().dim + self.descriptions.shape[1], self.get_s_embedder().dim, bias=False)
+        if not init_for_load_only:
+            self.get_s_embedder().initialize(self.projection.weight.data)
+
+    def project_with_descriptions(self, indexes, embs):
+        descriptions = self.descriptions[indexes.long()]
+        embeddings = torch.cat([descriptions, embs], dim=1)
+        return self.projection(embeddings)
 
     def score_sp(self, s: Tensor, p: Tensor, o: Tensor = None, unseen_mask: Optional[Tensor] = None, ctx=None) -> Tensor:
         if unseen_mask is None or ctx is None:
@@ -38,19 +54,22 @@ class ODistMult(KgeModel):
                 new_s_emb.append((ctx_p_emb*ctx_o_emb).mean(dim=0).view(1, -1))
             s_emb[unseen_mask] = torch.cat(new_s_emb, dim=0)
             s_emb[~unseen_mask] = self.get_s_embedder().embed(seen_s)
-        p = self.get_p_embedder().embed(p)
+        p_emb = self.get_p_embedder().embed(p)
         if o is None:
-            o = self.get_o_embedder().embed_all()
+            o_emb = self.get_o_embedder().embed_all()
         else:
-            o = self.get_o_embedder().embed(o)
+            o_emb = self.get_o_embedder().embed(o)
 
-        return self._scorer.score_emb(s_emb, p, o, combine="sp_")
+        s_emb = self.project_with_descriptions(s, s_emb)
+        o_emb = self.project_with_descriptions(o, o_emb)
+
+        return self._scorer.score_emb(s_emb, p_emb, o_emb, combine="sp_")
 
     def score_po(self, p: Tensor, o: Tensor, s: Tensor = None, unseen_mask: Optional[Tensor] = None, ctx=None) -> Tensor:
         if s is None:
-            s = self.get_s_embedder().embed_all()
+            s_emb = self.get_s_embedder().embed_all()
         else:
-            s = self.get_s_embedder().embed(s)
+            s_emb = self.get_s_embedder().embed(s)
         if unseen_mask is None or ctx is None:
             o_emb = self.get_o_embedder().embed(o)
         else:
@@ -63,9 +82,12 @@ class ODistMult(KgeModel):
                 ctx_s_emb = self.get_o_embedder().embed(ct[:, 1].long())
                 new_o_emb.append((ctx_p_emb*ctx_s_emb).mean(dim=0).view(1, -1))
             o_emb[unseen_mask] = torch.cat(new_o_emb, dim=0)
-        p = self.get_p_embedder().embed(p)
+        p_emb = self.get_p_embedder().embed(p)
 
-        return self._scorer.score_emb(s, p, o_emb, combine="_po")
+        s_emb = self.project_with_descriptions(s, s_emb)
+        o_emb = self.project_with_descriptions(o, o_emb)
+
+        return self._scorer.score_emb(s_emb, p_emb, o_emb, combine="_po")
 
     def score_spo(self, s: Tensor, p: Tensor, o: Tensor, direction=None, unseen_mask: Optional[Tensor] = None, ctx=None) -> Tensor:
         if direction == "o":  # unseen is in s
@@ -103,7 +125,16 @@ class ODistMult(KgeModel):
                 o_emb[unseen_mask] = torch.cat(new_o_emb, dim=0)
         else:
             raise NotImplementedError()
-        p = self.get_p_embedder().embed(p)
-        return self._scorer.score_emb(s_emb, p, o_emb, combine="spo").view(-1)
+        p_emb = self.get_p_embedder().embed(p)
+        s_emb = self.project_with_descriptions(s, s_emb)
+        o_emb = self.project_with_descriptions(o, o_emb)
+        return self._scorer.score_emb(s_emb, p_emb, o_emb, combine="spo").view(-1)
+
+    def score_sp_po(
+        self, s: Tensor, p: Tensor, o: Tensor, entity_subset: Tensor = None
+    ) -> Tensor:
+        sp_scores = self.score_sp(s, p, entity_subset)
+        po_scores = self.score_po(p, o, entity_subset)
+        return torch.cat([sp_scores, po_scores], dim=1)
 
 
