@@ -4,9 +4,11 @@ This is the benchmark, code, and configuration accompanying the paper [A Benchma
 The main branch holds code/information about the benchmark itself. 
 The following branches hold code and configuration for the separate models evaluated in the study.
 
-- [KGT5 \& KGT5-context]()
-- [ComplEx + Bias + FoldIn \& DisMult ERAvg]()
-- [HittER]()
+- [KGT5 \& KGT5-context](https://github.com/uma-pi1/kge/tree/kgt5-context)
+- [ComplEx + Bias + FoldIn](https://github.com/uma-pi1/kge/tree/complex_fold_in)
+- [DisMult ERAvg](https://github.com/uma-pi1/kge/tree/odistmult)
+- [DisMult ERAvg + Mention/Description](https://github.com/uma-pi1/kge/tree/odistmult_descriptions)
+- [HittER](https://github.com/uma-pi1/kge/tree/hitter)
 
 
 ## Benchmark
