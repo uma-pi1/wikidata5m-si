@@ -4,7 +4,7 @@ This is the benchmark, code, and configuration accompanying the paper [A Benchma
 
 ## DistMult + ERAvg
 
-This branch holds the code for the model DistMult + ERAvg.
+This branch holds the code for the model DistMult + ERAvg + Mentions/Descriptions.
 It is an extension of [LibKGE](https://github.com/uma-pi1/kge),
 
 ### Setup
@@ -12,7 +12,7 @@ It is an extension of [LibKGE](https://github.com/uma-pi1/kge),
 ```
 git clone https://github.com/uma-pi1/wikidata5m-si.git
 cd wikidata5m-si
-git checkout odistmult
+git checkout odistmult_descriptions
 pip install -e .
 ```
 
