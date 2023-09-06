@@ -6,6 +6,6 @@ do
     for i in ${SHOTS[@]}
     do
         echo $i
-        python -m kge eval ${EXP_PATH} --eval.type semi_inductive_entity_ranking --eval.split test --semi_inductive_entity_ranking.num_shots ${i} --semi_inductive_entity_ranking.context_selection ${cs} 2>&1 | tee odistmult_${i}_shot_${cs}.txt
+        python -m kge eval ${EXP_PATH} --eval.type semi_inductive_entity_ranking --eval.split test --semi_inductive_entity_ranking.num_shots ${i} --semi_inductive_entity_ranking.context_selection ${cs} 2>&1 | tee hitter_${i}_shot_${cs}.txt
     done
 done
