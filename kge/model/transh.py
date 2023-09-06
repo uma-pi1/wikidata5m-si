@@ -21,7 +21,7 @@ class TransHScorer(RelationalScorer):
             - torch.sum(ent_emb * norm_vec_emb, dim=-1, keepdim=True) * norm_vec_emb
         )
 
-    def score_emb(self, s_emb, p_emb, o_emb, combine: str):
+    def score_emb(self, s_emb, p_emb, o_emb, combine: str, **kwargs):
         # split relation embeddings into "rel_emb" and "norm_vec_emb"
         rel_emb, norm_vec_emb = torch.chunk(p_emb, 2, dim=1)
 

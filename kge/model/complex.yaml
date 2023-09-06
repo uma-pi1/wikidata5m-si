@@ -4,9 +4,7 @@ complex:
   class_name: ComplEx
   entity_embedder:
     type: lookup_embedder
-    space: complex
     +++: +++
   relation_embedder:
     type: lookup_embedder
-    space: complex
     +++: +++

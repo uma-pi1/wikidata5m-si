@@ -1,10 +1,13 @@
+import math
 import time
+import sys
 import torch
-import numpy as np
 from tqdm import tqdm
 from kge.job import EvaluationJob, Job
 from kge import Config, Dataset
-from kge.model import ReciprocalRelationsModel
+from collections import defaultdict
+import numpy as np
+from kge.model import ReciprocalRelationsModel, Hitter
 from kge.prepare_few_shot import FewShotSetCreator
 
 
@@ -50,10 +53,9 @@ class SemiInductiveEntityRankingJob(EvaluationJob):
         self.few_shot_creator = FewShotSetCreator(
             self.config.get("dataset.name"),
             split=self.config.get("eval.split"),
-            use_inverse=False,
+            use_inverse=True,
             context_selection=self.config.get("semi_inductive_entity_ranking.context_selection")
         )
-        self.num_shots = self.config.get("semi_inductive_entity_ranking.num_shots")
 
         if self.__class__ == SemiInductiveEntityRankingJob:
             for f in Job.job_created_hooks:
@@ -66,7 +68,7 @@ class SemiInductiveEntityRankingJob(EvaluationJob):
         # create data and precompute indexes
         self.triples = self.dataset.split(self.config.get("eval.split"))
         self.few_shot_dataset = self.few_shot_creator.create_few_shot_dataset(
-            num_shots=self.num_shots
+            num_shots=self.config.get("semi_inductive_entity_ranking.num_shots")
         )
         for split in self.filter_splits:
             self.dataset.index(f"{split}_sp_to_o")
@@ -87,11 +89,15 @@ class SemiInductiveEntityRankingJob(EvaluationJob):
 
     def _collate(self, batch):
         batch = batch[0]
-        batch["context"] = torch.from_numpy(batch["context"])[:, 2:]
+        #batch = self.few_shot_dataset[batch]
+        # bringing context in the right format for hitter [bs, nu
+        context = torch.from_numpy(batch["context"])[:, 3:].fliplr().unsqueeze(0)
+        # context = torch.flip(context.view(-1, 3)[:, 1:].T, dims=[0]).unsqueeze(0)
+        batch["context"] = context
         batch["triple"] = torch.from_numpy(batch["triple"])
         return batch
 
-    #@torch.no_grad()
+    @torch.no_grad()
     def _evaluate(self):
         # create initial trace entry
         self.current_trace["epoch"] = dict(
@@ -115,55 +121,33 @@ class SemiInductiveEntityRankingJob(EvaluationJob):
         for batch_number, batch in enumerate(tqdm(self.loader)):
             context = batch["context"].to(self.device)
             triple = batch["triple"].to(self.device)
-            inverse_mask = context[:, 2] == batch["unseen_entity"]
-            context[inverse_mask, 2] = context[inverse_mask, 0]
-            #context[inverse_mask, 0] = batch["unseen_entity"]
-            context = [context[:, [1, 2]]]
-            with torch.no_grad():
-                unseen_mask = torch.ones([1, ], dtype=torch.bool)
-                if batch["unseen_slot"] == 0:
-                    scores = self.model.score_sp(
-                        s=triple[0].unsqueeze(0).view(1,),
-                        p=triple[1].unsqueeze(0).view(1,),
-                        unseen_mask=unseen_mask,
-                        ctx=context,
-                    )
-                    true_score = self.model.score_spo(
-                        s=triple[0].unsqueeze(0).view(1, ),
-                        p=triple[1].unsqueeze(0).view(1, ),
-                        o=triple[2].unsqueeze(0).view(1, ),
-                        direction="o",
-                        unseen_mask=unseen_mask,
-                        ctx=context,
-                    )
-                else:
-                    scores = self.model.score_po(
-                        p=triple[1].unsqueeze(0).view(1,),
-                        o=triple[2].unsqueeze(0).view(1,),
-                        unseen_mask=unseen_mask,
-                        ctx=context,
-                    )
-                    true_score = self.model.score_spo(
-                        s=triple[0].unsqueeze(0).view(1, ),
-                        p=triple[1].unsqueeze(0).view(1, ),
-                        o=triple[2].unsqueeze(0).view(1, ),
-                        direction="s",
-                        unseen_mask=unseen_mask,
-                        ctx=context,
-                    )
-                #true_score = scores[0, triple[2]]
-                num_higher = torch.sum(scores > true_score)
-                num_ties = torch.sum(scores == true_score)
-                rank = num_higher + num_ties // 2 + 1
-                if batch["unseen_slot"] == 0:
-                    tail_ranks.append(rank.item())
-                else:
-                    head_ranks.append(rank.item())
-                ranks.append(rank.item())
+            scores = self.model.score_sp_semi_ind(
+                s=triple[0].unsqueeze(0).view(1, 1),
+                p=triple[1].unsqueeze(0).view(1, 1),
+                ctx_ids=context,
+                ctx_size=torch.IntTensor([context.shape[1]]).to(self.device)
+            )
+            true_score = scores[0, triple[2]]
+            num_higher = torch.sum(scores > true_score)
+            num_ties = torch.sum(scores == true_score)
+            rank = num_higher + num_ties // 2 + 1
+            ranks.append(rank.item())
+            if triple[1] >= self.dataset.num_relations():
+                head_ranks.append(rank.item())
+            else:
+                tail_ranks.append(rank.item())
+        ranks = np.array(ranks)
+        mrr = np.mean(1/ranks).item()
+        h1 = np.mean(ranks <= 1).item()
+        h3 = np.mean(ranks <= 3).item()
+        h5 = np.mean(ranks <= 5).item()
+        h10 = np.mean(ranks <= 10).item()
+        h100 = np.mean(ranks <= 100).item()
 
+        epoch_time += time.time()
         output = dict(
             event="eval_completed",
-            num_shots=self.num_shots
+            num_shots=self.config.get("semi_inductive_entity_ranking.num_shots")
         )
 
         for suffix, rs in zip(["", "_head", "_tail"], [ranks, head_ranks, tail_ranks]):
@@ -183,9 +167,6 @@ class SemiInductiveEntityRankingJob(EvaluationJob):
                 f"hits_at_100{suffix}": h100,
             }
             output.update(o)
-
-        epoch_time += time.time()
-        output["epoch_time"] = epoch_time
 
         self.current_trace["epoch"].update(
             output

@@ -130,7 +130,8 @@ class KCoreManager:
         train_np = train.cpu().detach().numpy()
 
         # perform k-core decomposition
-        vertices = np.unique(train_np[:, (0, 2)])
+        #vertices = np.unique(train_np[:, (0, 2)])
+        vertices = np.arange(self._dataset.num_entities())
         edges = train_np[:, (0, 2)]
 
         # create igraph
@@ -281,8 +282,8 @@ class KCoreManager:
         new_entity_ids = np.arange(len(entities))
         new_relation_ids = np.arange(len(relations))
 
-        entity_mapper = np.empty(len(all_entity_ids), dtype=np.long)
-        relation_mapper = np.empty(len(all_relation_ids), dtype=np.long)
+        entity_mapper = np.empty(len(all_entity_ids), dtype=np.int64)
+        relation_mapper = np.empty(len(all_relation_ids), dtype=np.int64)
 
         entity_mapper[selected_entity_ids] = new_entity_ids
         relation_mapper[selected_relation_ids] = new_relation_ids

@@ -72,7 +72,7 @@ class ConvEScorer(RelationalScorer):
         )
         self.non_linear = torch.nn.ReLU()
 
-    def score_emb(self, s_emb, p_emb, o_emb, combine: str):
+    def score_emb(self, s_emb, p_emb, o_emb, combine: str, **kwargs):
         if combine not in ["sp_", "spo"]:
             raise Exception(
                 "Combine {} not supported in ConvE's score function".format(combine)
@@ -134,7 +134,7 @@ class ConvE(KgeModel):
             "relation_embedder.dim", self.get_option("relation_embedder.dim") - 1
         )
 
-    def score_spo(self, s: Tensor, p: Tensor, o: Tensor, direction=None) -> Tensor:
+    def score_spo(self, s: Tensor, p: Tensor, o: Tensor, direction=None, **kwargs) -> Tensor:
         # We overwrite this method to ensure that ConvE only predicts towards objects.
         # If ConvE is wrapped in a reciprocal relations model, this will always be the
         # case.

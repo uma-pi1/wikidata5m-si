@@ -7,6 +7,8 @@ import kge.job
 from kge.job import EvaluationJob, Job
 from kge import Config, Dataset
 from collections import defaultdict
+import numpy as np
+from kge.model import ReciprocalRelationsModel, Hitter
 
 
 class EntityRankingJob(EvaluationJob):
@@ -38,6 +40,11 @@ class EntityRankingJob(EvaluationJob):
 
         #: Whether to create additional histograms for head and tail slot
         self.head_and_tail = config.get("entity_ranking.metrics_per.head_and_tail")
+
+        if type(self.model) is ReciprocalRelationsModel and type(self.model._base_model) is Hitter:
+            self.neighborhood_size = self.config.get(
+                "reciprocal_relations_model.base_model.neighborhood_size"
+            )
 
         if "cuda" in self.device:
             torch.backends.cuda.matmul.allow_tf32 = False
@@ -101,7 +108,31 @@ class EntityRankingJob(EvaluationJob):
         else:
             test_label_coords = torch.zeros([0, 2], dtype=torch.long)
 
-        return batch, label_coords, test_label_coords
+
+        all_ctx_s = np.empty([len(batch), self.neighborhood_size, 2], dtype=int)
+        all_ctx_o = np.empty([len(batch), self.neighborhood_size, 2], dtype=int)
+        ctx_size_s = torch.empty([len(batch)], dtype=torch.int)
+        ctx_size_o = torch.empty([len(batch)], dtype=torch.int)
+        for i, triple in enumerate(batch):
+            ctx_s = self.dataset.index("1hop").get(triple[0])
+            ctx_o = self.dataset.index("1hop").get(triple[2])
+            all_ctx_s[i, :len(ctx_s), 0] = ctx_s[:, 1]
+            all_ctx_s[i, :len(ctx_s), 1] = ctx_s[:, 0]
+            all_ctx_o[i, :len(ctx_o), 0] = ctx_o[:, 1]
+            all_ctx_o[i, :len(ctx_o), 1] = ctx_o[:, 0]
+            ctx_size_s[i] = len(ctx_s)
+            ctx_size_o[i] = len(ctx_o)
+
+        return {
+            "triples": batch,
+            "label_coords": label_coords,
+            "test_label_coords": test_label_coords,
+            "ctx_s": torch.from_numpy(all_ctx_s),
+            "ctx_o": torch.from_numpy(all_ctx_o),
+            "ctx_size_s": ctx_size_s,
+            "ctx_size_o": ctx_size_o,
+        }
+            #batch, label_coords, test_label_coords, all_ctx_s, all_ctx_o, ctx_size_s, ctx_size_o
 
     @torch.no_grad()
     def _evaluate(self):
@@ -152,7 +183,7 @@ class EntityRankingJob(EvaluationJob):
                 filter_splits=self.filter_splits,
                 epoch=self.epoch,
                 batch=batch_number,
-                size=len(batch_coords[0]),
+                size=len(batch_coords["triples"]),
                 batches=len(self.loader),
             )
 
@@ -163,11 +194,15 @@ class EntityRankingJob(EvaluationJob):
             # construct a sparse label tensor of shape batch_size x 2*num_entities
             # entries are either 0 (false) or infinity (true)
             # TODO add timing information
-            batch = batch_coords[0].to(self.device)
+            batch = batch_coords["triples"].to(self.device)
             s, p, o = batch[:, 0], batch[:, 1], batch[:, 2]
-            label_coords = batch_coords[1].to(self.device)
+            ctx_s = batch_coords["ctx_s"].to(self.device)
+            ctx_o = batch_coords["ctx_o"].to(self.device)
+            ctx_size_s = batch_coords["ctx_size_s"].to(self.device)
+            ctx_size_o = batch_coords["ctx_size_o"].to(self.device)
+            label_coords = batch_coords["label_coords"].to(self.device)
             if filter_with_test:
-                test_label_coords = batch_coords[2].to(self.device)
+                test_label_coords = batch_coords["test_label_coords"].to(self.device)
                 # create sparse labels tensor
                 test_labels = kge.job.util.coord_to_sparse_tensor(
                     len(batch),
@@ -186,21 +221,37 @@ class EntityRankingJob(EvaluationJob):
 
             # compute true scores beforehand, since we can't get them from a chunked
             # score table
-            # o_true_scores = self.model.score_spo(s, p, o, "o").view(-1)
-            # s_true_scores = self.model.score_spo(s, p, o, "s").view(-1)
-            # scoring with spo vs sp and po can lead to slight differences for ties
-            # due to floating point issues.
-            # We use score_sp and score_po to stay consistent with scoring used for
-            # further evaluation.
+            #o_true_scores = self.model.score_spo(s, p, o, "o").view(-1)
+            #s_true_scores = self.model.score_spo(s, p, o, "s").view(-1)
             unique_o, unique_o_inverse = torch.unique(o, return_inverse=True)
             o_true_scores = torch.gather(
-                self.model.score_sp(s, p, unique_o),
+                self.model.score_sp(
+                    s,
+                    p,
+                    unique_o,
+                    #ground_truth_s=s,
+                    #ground_truth_p=p,
+                    #ground_truth_o=None,
+                    ground_truth=None,
+                    ctx_ids=ctx_s,
+                    ctx_size=ctx_size_s,
+                ),
                 1,
                 unique_o_inverse.view(-1, 1),
             ).view(-1)
             unique_s, unique_s_inverse = torch.unique(s, return_inverse=True)
             s_true_scores = torch.gather(
-                self.model.score_po(p, o, unique_s),
+                self.model.score_po(
+                    p,
+                    o,
+                    unique_s,
+                    #ground_truth_s=None,
+                    #ground_truth_p=p,
+                    #ground_truth_o=o,
+                    ground_truth=None,
+                    ctx_ids=ctx_o,
+                    ctx_size=ctx_size_o
+            ),
                 1,
                 unique_s_inverse.view(-1, 1),
             ).view(-1)
@@ -227,11 +278,26 @@ class EntityRankingJob(EvaluationJob):
                 chunk_end = min(chunk_size * (chunk_number + 1), num_entities)
 
                 # compute scores of chunk
-                scores = self.model.score_sp_po(
-                    s, p, o, torch.arange(chunk_start, chunk_end, device=self.device)
+                chunk_ids = torch.arange(chunk_start, chunk_end, device=self.device)
+                scores_sp = self.model.score_sp(
+                    s,
+                    p,
+                    chunk_ids,
+                    ctx_ids=ctx_s,
+                    ctx_size=ctx_size_s
                 )
-                scores_sp = scores[:, : chunk_end - chunk_start]
-                scores_po = scores[:, chunk_end - chunk_start :]
+                scores_po = self.model.score_po(
+                    p,
+                    o,
+                    chunk_ids,
+                    ctx_ids=ctx_o,
+                    ctx_size=ctx_size_o
+                )
+                #scores = self.model.score_sp_po(
+                #    s, p, o, torch.arange(chunk_start, chunk_end, device=self.device)
+                #)
+                #scores_sp = scores[:, : chunk_end - chunk_start]
+                #scores_po = scores[:, chunk_end - chunk_start :]
 
                 # replace the precomputed true_scores with the ones occurring in the
                 # scores matrix to avoid floating point issues
@@ -242,27 +308,13 @@ class EntityRankingJob(EvaluationJob):
 
                 # check that scoring is consistent up to configured tolerance
                 # if this is not the case, evaluation metrics may be artificially inflated
-                close_check = torch.allclose(
-                    scores_sp[o_in_chunk_mask, o_in_chunk],
-                    o_true_scores[o_in_chunk_mask],
-                    rtol=self.tie_rtol,
-                    atol=self.tie_atol,
-                )
-                close_check &= torch.allclose(
-                    scores_po[s_in_chunk_mask, s_in_chunk],
-                    s_true_scores[s_in_chunk_mask],
-                    rtol=self.tie_rtol,
-                    atol=self.tie_atol,
-                )
+                close_check = torch.allclose(scores_sp[o_in_chunk_mask, o_in_chunk], o_true_scores[o_in_chunk_mask],
+                                             rtol=self.tie_rtol, atol=self.tie_atol)
+                close_check &= torch.allclose(scores_po[s_in_chunk_mask, s_in_chunk], s_true_scores[s_in_chunk_mask],
+                                              rtol=self.tie_rtol, atol=self.tie_atol)
                 if not close_check:
-                    diff_a = torch.abs(
-                        scores_sp[o_in_chunk_mask, o_in_chunk]
-                        - o_true_scores[o_in_chunk_mask]
-                    )
-                    diff_b = torch.abs(
-                        scores_po[s_in_chunk_mask, s_in_chunk]
-                        - s_true_scores[s_in_chunk_mask]
-                    )
+                    diff_a = torch.abs(scores_sp[o_in_chunk_mask, o_in_chunk] - o_true_scores[o_in_chunk_mask])
+                    diff_b = torch.abs(scores_po[s_in_chunk_mask, s_in_chunk] - s_true_scores[s_in_chunk_mask])
                     diff_all = torch.cat((diff_a, diff_b))
                     self.config.log(
                         f"Tie-handling: mean difference between scores was: {diff_all.mean()}."
@@ -590,9 +642,7 @@ num_ties for each true score.
 
         # Determine how many scores are greater than / equal to each true answer (in its
         # corresponding row of scores)
-        is_close = torch.isclose(
-            scores, true_scores.view(-1, 1), rtol=self.tie_rtol, atol=self.tie_atol
-        )
+        is_close = torch.isclose(scores, true_scores.view(-1, 1), rtol=self.tie_rtol, atol=self.tie_atol)
         is_greater = scores > true_scores.view(-1, 1)
         num_ties = torch.sum(is_close, dim=1, dtype=torch.long)
         rank = torch.sum(is_greater & ~is_close, dim=1, dtype=torch.long)
@@ -636,12 +686,7 @@ num_ties for each true score.
         )
 
         hits_at_k = (
-            (
-                torch.cumsum(
-                    rank_hist[: max(self.hits_at_k_s)], dim=0, dtype=torch.float64
-                )
-                / n
-            ).tolist()
+            (torch.cumsum(rank_hist[: max(self.hits_at_k_s)], dim=0, dtype=torch.float64) / n).tolist()
             if n > 0.0
             else [0.0] * max(self.hits_at_k_s)
         )
@@ -650,7 +695,6 @@ num_ties for each true score.
             metrics["hits_at_{}{}".format(k, suffix)] = hits_at_k[k - 1]
 
         return metrics
-
 
 # HISTOGRAM COMPUTATION ###############################################################
 

@@ -1,0 +1,251 @@
+1vsSample:
+  class_name: TrainingJob1vsSample
+  num_samples:
+    o: 5489
+    s: 6618
+dataset:
+  +++: +++
+  files:
+    +++: +++
+    entity_ids:
+      filename: all_entity_ids.del
+      type: map
+  name: wikidata5m_v3_semi_inductive
+  num_entities: -1
+  num_relations: -1
+  pickle: true
+entity_ranking:
+  chunk_size: 40000
+  class_name: EntityRankingJob
+  filter_splits:
+  - train
+  - valid
+  filter_with_test: true
+  hits_at_k_s:
+  - 1
+  - 3
+  - 10
+  - 50
+  - 100
+  - 200
+  - 300
+  - 400
+  - 500
+  - 1000
+  metrics_per:
+    argument_frequency: false
+    head_and_tail: false
+    relation_type: false
+  tie_handling:
+    atol: 1e-05
+    rtol: 1e-04
+    type: rounded_mean_rank
+    warn_only: true
+eval:
+  batch_size: 100
+  num_workers: 0
+  pin_memory: false
+  split: valid
+  trace_level: epoch
+  type: entity_ranking
+grash_search:
+  class_name: GraSHSearchJob
+  cost_metric: triples
+  eta: 4
+  keep_initialization: false
+  keep_pretrained: false
+  min_negatives_percentage: 0.01
+  num_trials: 64
+  parameters:
+  - bounds:
+    - 0.001
+    - 1.0
+    log_scale: true
+    name: train.optimizer.default.args.lr
+    type: range
+  - bounds:
+    - 1
+    - 10000
+    log_scale: false
+    name: 1vsSample.num_samples.s
+    type: range
+  - bounds:
+    - 1
+    - 10000
+    log_scale: false
+    name: 1vsSample.num_samples.o
+    type: range
+  - bounds:
+    - 0.1
+    - 0.7
+    name: reciprocal_relations_model.base_model.drop_neighborhood_fraction
+    type: range
+  - bounds:
+    - 0.0
+    - 0.5
+    name: reciprocal_relations_model.base_model.hidden_dropout
+    type: range
+  - bounds:
+    - 0.0
+    - 1.0
+    name: reciprocal_relations_model.base_model.entity_dropout
+    type: range
+  - bounds:
+    - 0.0
+    - 0.8
+    name: reciprocal_relations_model.base_model.entity_dropout_masked
+    type: range
+  - bounds:
+    - 0.0
+    - 0.8
+    name: reciprocal_relations_model.base_model.entity_dropout_replaced
+    type: range
+  - name: reciprocal_relations_model.base_model.add_mlm_loss
+    type: choice
+    values:
+    - true
+    - false
+  search_budget: 3
+  seed: 58
+  valid_frac: 0.2
+  valid_max: 5000
+  variant: graph
+import:
+- reciprocal_relations_model
+job:
+  auto_correct: false
+  device: cuda
+  device_pool: []
+  multi_gpu: false
+  type: train
+lookup_embedder:
+  class_name: LookupEmbedder
+  dim: 320
+  dropout: 0.0
+  initialize: normal_
+  initialize_args:
+    +++: +++
+    normal_:
+      std: 0.02
+  normalize:
+    p: -1.0
+  pretrain:
+    ensure_all: false
+    model_filename: ''
+  regularize: lp
+  regularize_args:
+    +++: +++
+    p: 2
+    weighted: false
+  regularize_weight: 0.0
+  round_dim_to: []
+  sparse: true
+manual_search:
+  class_name: ManualSearchJob
+  configurations: []
+  run: true
+model: reciprocal_relations_model
+modules:
+- kge.job
+- kge.model
+- kge.model.embedder
+negative_sampling:
+  class_name: TrainingJobNegativeSampling
+  filtering:
+    implementation: fast_if_available
+    o: false
+    p: false
+    s: false
+    split: ''
+  frequency:
+    smoothing: 1
+  implementation: auto
+  num_samples:
+    o: -1
+    p: 0
+    s: 3
+  sampling_type: uniform
+  shared: false
+  shared_type: default
+  with_replacement: true
+random_seed:
+  default: -1
+  numba: -1
+  numpy: -1
+  python: -1
+  torch: -1
+reciprocal_relations_model:
+  base_model:
+    +++: +++
+    add_mlm_loss: true
+    context_implementation: hitter
+    drop_neighborhood_fraction: 0.5176043304891884
+    entity_dropout: 0.4371956781285624
+    entity_dropout_masked: 0.1106903908719139
+    entity_dropout_replaced: 0.1594550614568079
+    hidden_dropout: 0.026704989913285515
+    implementation: pytorch
+    layer_norm_implementation: BERT
+    neighborhood_size: 50
+    output_dropout: 0.6
+    type: hitter
+  class_name: ReciprocalRelationsModel
+search:
+  device_pool: []
+  num_workers: 1
+  on_error: abort
+  type: grash_search
+semi_inductive_entity_ranking:
+  class_name: SemiInductiveEntityRankingJob
+  context_selection: most_common
+  num_shots: 10
+train:
+  abort_on_nan: true
+  batch_size: 512
+  checkpoint:
+    every: 5
+    keep: 3
+    keep_init: true
+  loss: kl
+  loss_arg: 0.1
+  lr_scheduler: LinearLR
+  lr_scheduler_args:
+    +++: +++
+    end_factor: 0
+    start_factor: 1
+    total_iters: 450
+  lr_warmup: 50
+  max_epochs: 64
+  num_workers: 4
+  optimizer:
+    +++: +++
+    default:
+      args:
+        +++: +++
+        eps: 1.0e-06
+        lr: 0.0022372253347896095
+        weight_decay: 0.01
+      type: Adamax
+  pin_memory: false
+  split: train
+  subbatch_auto_tune: false
+  subbatch_size: -1
+  trace_level: epoch
+  type: 1vsSample
+  visualize_graph: false
+training_loss:
+  class_name: TrainingLossEvaluationJob
+user:
+  +++: +++
+valid:
+  early_stopping:
+    patience: 10
+    threshold:
+      epochs: 50
+      metric_value: 0.05
+  every: 4
+  metric: mean_reciprocal_rank_filtered_with_test
+  metric_expr: float("nan")
+  metric_max: true
+  split: valid
+  trace_level: epoch

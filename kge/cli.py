@@ -216,6 +216,8 @@ def main():
         if value is not None:
             if key == "search.device_pool":
                 value = "".join(value).split(",")
+            if key == "job.device_pool":
+                value = [int(v) for v in "".join(value).split(",")]
             try:
                 if isinstance(config.get(key), bool):
                     value = argparse_bool_type(value)
@@ -251,6 +253,11 @@ def main():
         # disable processing of outdated cached dataset files globally
         Dataset._abort_when_cache_outdated = args.abort_when_cache_outdated
 
+        # log configuration
+        config.log("Configuration:")
+        config.log(yaml.dump(config.options), prefix="  ")
+        config.log("git commit: {}".format(get_git_revision_short_hash()), prefix="  ")
+
         # set random seeds
         seed_from_config(config)
 
@@ -277,12 +284,6 @@ def main():
                     )
             else:
                 job = Job.create(config, dataset)
-
-            # log configuration
-            config.log("Configuration:")
-            config.log(yaml.dump(config.options), prefix="  ")
-            config.log("git commit: {}".format(get_git_revision_short_hash()),
-                       prefix="  ")
             job.run()
     except BaseException:
         tb = traceback.format_exc()

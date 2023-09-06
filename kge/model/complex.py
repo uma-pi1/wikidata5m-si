@@ -15,7 +15,7 @@ class ComplExScorer(RelationalScorer):
     def __init__(self, config: Config, dataset: Dataset, configuration_key=None):
         super().__init__(config, dataset, configuration_key)
 
-    def score_emb(self, s_emb, p_emb, o_emb, combine: str):
+    def score_emb(self, s_emb, p_emb, o_emb, combine: str, **kwargs):
         n = p_emb.size(0)
 
         # Here we use a fast implementation of computing the ComplEx scores using

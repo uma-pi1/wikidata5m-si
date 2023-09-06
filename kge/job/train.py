@@ -143,8 +143,8 @@ class TrainingJob(TrainingOrEvaluationJob):
             raise Exception(
                 f"{self.__class__.__name__} was initialized for forward only. You can only call run_epoch()"
             )
-        #if self.epoch == 0:
-        #    self.save(self.config.checkpoint_file(0))
+        if self.epoch == 0:
+            self.save(self.config.checkpoint_file(0))
 
         self.config.log("Starting training...")
         checkpoint_every = self.config.get("train.checkpoint.every")
@@ -215,10 +215,8 @@ class TrainingJob(TrainingOrEvaluationJob):
             # validate
             lr_metric = None
             if (
-                    (self.config.get("valid.every") > 0
-                     and self.epoch % self.config.get("valid.every") == 0)
-                    or (self.epoch == self.config.get("train.max_epochs")
-                        and self.config.get("valid.last"))
+                self.config.get("valid.every") > 0
+                and self.epoch % self.config.get("valid.every") == 0
             ):
                 self.valid_job.epoch = self.epoch
                 trace_entry = self.valid_job.run()
@@ -505,13 +503,14 @@ class TrainingJob(TrainingOrEvaluationJob):
                     + "{}  batch{: "
                     + str(1 + int(math.ceil(math.log10(len(self.loader)))))
                     + "d}/{}"
-                    + ", avg_loss {:.4E}, penalty {:.4E}, cost {:.4E}, time {:6.2f}s"
+                    + ", avg_loss {:.4E}, avg_loss_self {:.4E}, penalty {:.4E}, cost {:.4E}, time {:6.2f}s"
                     + "\033[K"  # clear to right
                 ).format(
                     self.config.log_prefix,
                     batch_index,
                     len(self.loader) - 1,
                     batch_result.avg_loss,
+                    batch_result.avg_loss_self,
                     penalty,
                     cost_value,
                     batch_result.prepare_time
@@ -591,6 +590,7 @@ class TrainingJob(TrainingOrEvaluationJob):
         prepare_time: float = 0.0
         forward_time: float = 0.0
         backward_time: float = 0.0
+        avg_loss_self: float = 0.0
 
     def _process_batch(self, batch_index, batch) -> _ProcessBatchResult:
         "Breaks a batch into subbatches and processes them in turn."

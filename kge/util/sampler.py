@@ -260,7 +260,7 @@ class BatchNegativeSample(Configurable):
         self.positive_triples = self.positive_triples.to(device)
         return self
 
-    def score(self, model, indexes=None, unseen_mask=None, ctx=None) -> torch.Tensor:
+    def score(self, model, indexes=None) -> torch.Tensor:
         """Score the negative samples for the batch with the provided model.
 
         If `indexes` is provided, only score the corresponding subset of the batch.
@@ -302,8 +302,6 @@ class BatchNegativeSample(Configurable):
                 triples_to_score[:, P],
                 triples_to_score[:, O],
                 direction=SLOT_STR[slot],
-                unseen_mask=unseen_mask,
-                ctx=ctx,
             ).view(chunk_size, -1)
             self.forward_time += time.time()
         elif self._implementation in ["batch", "all"]:
@@ -322,7 +320,7 @@ class BatchNegativeSample(Configurable):
             # compute all scores for slot
             self.forward_time -= time.time()
             all_scores = self._score_unique_targets(
-                model, slot, triples, unique_targets, unseen_mask=unseen_mask, ctx=ctx
+                model, slot, triples, unique_targets
             )
             self.forward_time += time.time()
 
@@ -346,13 +344,13 @@ class BatchNegativeSample(Configurable):
         return scores
 
     @staticmethod
-    def _score_unique_targets(model, slot, triples, unique_targets, unseen_mask=None, ctx=None) -> torch.Tensor:
+    def _score_unique_targets(model, slot, triples, unique_targets) -> torch.Tensor:
         if slot == S:
-            all_scores = model.score_po(triples[:, P], triples[:, O], unique_targets, unseen_mask=unseen_mask, ctx=ctx)
+            all_scores = model.score_po(triples[:, P], triples[:, O], unique_targets, ground_truth=triples[:, S])
         elif slot == P:
             all_scores = model.score_so(triples[:, S], triples[:, O], unique_targets)
         elif slot == O:
-            all_scores = model.score_sp(triples[:, S], triples[:, P], unique_targets, unseen_mask=unseen_mask, ctx=ctx)
+            all_scores = model.score_sp(triples[:, S], triples[:, P], unique_targets, ground_truth=triples[:, O])
         else:
             raise NotImplementedError
         return all_scores
@@ -427,7 +425,7 @@ class NaiveSharedNegativeSample(BatchNegativeSample):
 
         return negative_samples1.unsqueeze(0).expand((chunk_size, -1))
 
-    def score(self, model, indexes=None, unseen_mask=None, ctx=None) -> torch.Tensor:
+    def score(self, model, indexes=None) -> torch.Tensor:
         if self._implementation != "batch":
             return super().score(model, indexes)
 
@@ -447,9 +445,7 @@ class NaiveSharedNegativeSample(BatchNegativeSample):
 
         # compute scores for all unique targets for slot
         self.forward_time -= time.time()
-        scores = self._score_unique_targets(
-            model, slot, triples, unique_targets, unseen_mask=unseen_mask, ctx=ctx
-        )
+        scores = self._score_unique_targets(model, slot, triples, unique_targets)
 
         # repeat scores as needed for WR sampling
         if num_unique != self.num_samples:
@@ -538,7 +534,7 @@ class DefaultSharedNegativeSample(BatchNegativeSample):
 
         return negative_samples
 
-    def score(self, model, indexes=None, unseen_mask=None, ctx=None) -> torch.Tensor:
+    def score(self, model, indexes=None) -> torch.Tensor:
         if self._implementation != "batch":
             return super().score(model, indexes)
 
@@ -558,9 +554,7 @@ class DefaultSharedNegativeSample(BatchNegativeSample):
 
         # compute scores for all unique targets for slot
         self.forward_time -= time.time()
-        all_scores = self._score_unique_targets(
-            model, slot, triples, unique_targets, unseen_mask=unseen_mask, ctx=ctx
-        )
+        all_scores = self._score_unique_targets(model, slot, triples, unique_targets)
 
         # create the complete scoring matrix
         device = self.positive_triples.device

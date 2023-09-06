@@ -149,7 +149,7 @@ class RelationalScorer(KgeBase):
         return self.score_emb(s_emb, p_emb, o_emb, "spo")
 
     def score_emb(
-        self, s_emb: Tensor, p_emb: Tensor, o_emb: Tensor, combine: str
+        self, s_emb: Tensor, p_emb: Tensor, o_emb: Tensor, combine: str, **kwargs
     ) -> Tensor:
         r"""Scores a set of triples specified by their embeddings.
 
@@ -497,6 +497,11 @@ class KgeModel(KgeBase):
                 init_for_load_only=init_for_load_only,
             )
             model.to(config.get("job.device"))
+            if config.get("job.multi_gpu"):
+                device_ids = config.get("job.device_pool")
+                if not device_ids:
+                    device_ids = None
+                model = DataParallelKgeModel(model, device_ids)
             return model
         except:
             config.log(f"Failed to create model {model_name} (class {class_name}).")
@@ -660,7 +665,7 @@ class KgeModel(KgeBase):
     def get_scorer(self) -> RelationalScorer:
         return self._scorer
 
-    def score_spo(self, s: Tensor, p: Tensor, o: Tensor, direction=None, unseen_mask: Optional[Tensor] = None, ctx=None) -> Tensor:
+    def score_spo(self, s: Tensor, p: Tensor, o: Tensor, direction=None, **kwargs) -> Tensor:
         r"""Compute scores for a set of triples.
 
         `s`, `p`, and `o` are vectors of common size :math:`n`, holding the indexes of
@@ -674,12 +679,12 @@ class KgeModel(KgeBase):
         score of triple :math:`(s_i, p_i, o_i)`.
 
         """
-        s = self.get_s_embedder().embed(s)
-        p = self.get_p_embedder().embed(p)
-        o = self.get_o_embedder().embed(o)
-        return self._scorer.score_emb(s, p, o, combine="spo").view(-1)
+        s_emb = self.get_s_embedder().embed(s)
+        p_emb = self.get_p_embedder().embed(p)
+        o_emb = self.get_o_embedder().embed(o)
+        return self._scorer.score_emb(s_emb, p_emb, o_emb, combine="spo", ground_truth_s=s, ground_truth_p=p, ground_truth_o=o, direction=direction).view(-1)
 
-    def score_sp(self, s: Tensor, p: Tensor, o: Tensor = None, unseen_mask: Optional[Tensor] = None, ctx=None) -> Tensor:
+    def score_sp(self, s: Tensor, p: Tensor, o: Tensor = None, ground_truth: Tensor = None, **kwargs) -> Tensor:
         r"""Compute scores for triples formed from a set of sp-pairs and all (or a subset of the) objects.
 
         `s` and `p` are vectors of common size :math:`n`, holding the indexes of the
@@ -692,16 +697,16 @@ class KgeModel(KgeBase):
         If `o` is not None, it is a vector holding the indexes of the objects to score.
 
         """
-        s = self.get_s_embedder().embed(s)
-        p = self.get_p_embedder().embed(p)
+        s_emb = self.get_s_embedder().embed(s)
+        p_emb = self.get_p_embedder().embed(p)
         if o is None:
-            o = self.get_o_embedder().embed_all()
+            o_emb = self.get_o_embedder().embed_all()
         else:
-            o = self.get_o_embedder().embed(o)
+            o_emb = self.get_o_embedder().embed(o)
 
-        return self._scorer.score_emb(s, p, o, combine="sp_")
+        return self._scorer.score_emb(s_emb, p_emb, o_emb, combine="sp_", ground_truth_s=s, ground_truth_p=p, ground_truth_o=ground_truth, **kwargs)
 
-    def score_po(self, p: Tensor, o: Tensor, s: Tensor = None, unseen_mask: Optional[Tensor] = None, ctx=None) -> Tensor:
+    def score_po(self, p: Tensor, o: Tensor, s: Tensor = None, ground_truth: Tensor = None, **kwargs) -> Tensor:
         r"""Compute scores for triples formed from a set of po-pairs and (or a subset of the) subjects.
 
         `p` and `o` are vectors of common size :math:`n`, holding the indexes of the
@@ -716,15 +721,15 @@ class KgeModel(KgeBase):
         """
 
         if s is None:
-            s = self.get_s_embedder().embed_all()
+            s_emb = self.get_s_embedder().embed_all()
         else:
-            s = self.get_s_embedder().embed(s)
-        o = self.get_o_embedder().embed(o)
-        p = self.get_p_embedder().embed(p)
+            s_emb = self.get_s_embedder().embed(s)
+        o_emb = self.get_o_embedder().embed(o)
+        p_emb = self.get_p_embedder().embed(p)
 
-        return self._scorer.score_emb(s, p, o, combine="_po")
+        return self._scorer.score_emb(s_emb, p_emb, o_emb, combine="_po", ground_truth_s=ground_truth, ground_truth_p=p, ground_truth_o=o, **kwargs)
 
-    def score_so(self, s: Tensor, o: Tensor, p: Tensor = None) -> Tensor:
+    def score_so(self, s: Tensor, o: Tensor, p: Tensor = None, **kwargs) -> Tensor:
         r"""Compute scores for triples formed from a set of so-pairs and all (or a subset of the) relations.
 
         `s` and `o` are vectors of common size :math:`n`, holding the indexes of the
@@ -747,7 +752,7 @@ class KgeModel(KgeBase):
         return self._scorer.score_emb(s, p, o, combine="s_o")
 
     def score_sp_po(
-        self, s: Tensor, p: Tensor, o: Tensor, entity_subset: Tensor = None
+        self, s: Tensor, p: Tensor, o: Tensor, entity_subset: Tensor = None, **kwargs
     ) -> Tensor:
         r"""Combine `score_sp` and `score_po`.
 
@@ -787,3 +792,35 @@ class KgeModel(KgeBase):
             sp_scores = self._scorer.score_emb(s, p, all_objects, combine="sp_")
             po_scores = self._scorer.score_emb(all_subjects, p, o, combine="_po")
         return torch.cat((sp_scores, po_scores), dim=1)
+    
+    def forward(self, function_name, *args, **kwargs):
+
+        # call score_sp/score_po during training, score_spo/score_sp_po during inference
+        return_value = getattr(self, function_name)(*args, **kwargs)
+        return return_value
+
+
+class DataParallelKgeModel(torch.nn.DataParallel):
+    def __init__(self, model, device_ids):
+        super(DataParallelKgeModel, self).__init__(model, device_ids)
+
+    def __getattr__(self, name):
+        try:
+            return super(DataParallelKgeModel, self).__getattr__(name)
+        except AttributeError:
+            return getattr(self.module, name)
+
+    def score_sp(self, *args, **kwargs):
+        return self.forward("score_sp", *args, **kwargs)
+
+    def score_po(self, *args, **kwargs):
+        return self.forward("score_po", *args, **kwargs)
+
+    def score_spo(self, *args, **kwargs):
+        return self.forward("score_spo", *args, **kwargs)
+
+    def score_sp_po(self, *args, **kwargs):
+        return self.forward("score_sp_po", *args, **kwargs)
+
+    def score_so(self, *args, **kwargs):
+        return self.forward("score_so", *args, **kwargs)

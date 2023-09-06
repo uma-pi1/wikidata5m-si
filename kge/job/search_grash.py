@@ -398,20 +398,20 @@ class GraSHWorker(Worker):
             conf.set("dataset", self.parent_job.dataset.config.get("dataset"))
 
             # downscale number of negatives (don't if slot has default option -1)
-            number_samples_s = conf.get("negative_sampling.num_samples.s")
+            number_samples_s = conf.get("1vsSample.num_samples.s")
             if number_samples_s > 0:
                 negatives_scaler = max(
                     subset[1]["rel_entities"],
                     self.parent_job.config.get("grash_search.min_negatives_percentage"),
                 )
                 conf.set(
-                    "negative_sampling.num_samples.s",
+                    "1vsSample.num_samples.s",
                     math.ceil(number_samples_s * negatives_scaler),
                 )
-            number_samples_o = conf.get("negative_sampling.num_samples.o")
+            number_samples_o = conf.get("1vsSample.num_samples.o")
             if number_samples_o > 0:
                 conf.set(
-                    "negative_sampling.num_samples.o",
+                    "1vsSample.num_samples.o",
                     math.ceil(number_samples_o * negatives_scaler),
                 )
 

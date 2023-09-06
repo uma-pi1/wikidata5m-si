@@ -1,0 +1,71 @@
+import: [lookup_embedder]
+
+# Should only be used with reciprocal relations:
+# - model: reciprocal_relations_model
+# - reciprocal_relations_model.base_model.type: transformer
+
+hitter:
+  class_name: Hitter
+  entity_embedder:
+    type: lookup_embedder
+    +++: +++
+  relation_embedder:
+    type: lookup_embedder
+    +++: +++
+
+  # Neighborhood size.
+  # During training, random permutation of the full neighborhood.
+  # Otherwise, first neighborhood size of full neighborhood
+  # if neighborhood is less than neighborhood size, left empty and masked.
+  neighborhood_size: 12
+  # Fraction of neighborhood that is randomly dropped (masked)
+  # fraction on batch level, not on per entry level
+  drop_neighborhood_fraction: 0.3
+
+  # context algorithm. Available: hitter, hitter_reciprocalfixed
+  # Hitter does not mask out the reciprocal ground truth if s = o.
+  context_implementation: hitter
+
+  implementation: pytorch
+  layer_norm_implementation: pytorch
+  # dropout for target embeddings before dot multiplication
+  output_dropout: 0.0
+  # hidden dropout within transformer
+  hidden_dropout: 0.0
+
+  # fraction of dataset that will be used for dropout, no actual masking or replacing
+  entity_dropout: 0.0
+  # fraction of dropout to be masked
+  entity_dropout_masked: 0.0
+  # fraction of dropout to be replaced, fraction of whole dropout but masked will not be replaced
+  entity_dropout_replaced: 0.0
+
+  # Whether or not to include mlm loss calculated on entity_dropout sample
+  add_mlm_loss: False
+
+  # loss type for self loss, same configuration as in train.loss
+  loss: kl
+  # loss arg for self loss, same configuration as in train.loss_arg
+  loss_arg:  .nan
+
+  encoder:
+    # see torch.nn.TransformerEncodeLayer
+    nhead: 8                     # the number of heads
+    # Dim_feedforward will be automatically set to 4 times embeddings dimensionality, as in Vaswani 2017 and Devlin 2019
+    dim_feedforward: 0
+    activation: gelu             # relu or gelu
+
+    # see torch.nn.TransformerEncoder
+    entity_encoder:
+      num_layers: 3                # the number of sub-encoder-layers in the encoder
+
+    context_encoder:
+      num_layers: 6                # the number of sub-encoder-layers in the encoder
+
+
+  # Initialization for transformer layers, CLS embedding and type embeddings.
+  initialize: 'normal_'
+  initialize_args:
+    mean: 0.0
+    std: 0.02
+    +++: +++

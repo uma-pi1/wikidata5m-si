@@ -38,24 +38,29 @@ class TransformerScorer(RelationalScorer):
         self.rel_type_emb = torch.nn.parameter.Parameter(torch.zeros(self.emb_dim))
         self.initialize(self.rel_type_emb)
 
+        self.feedforward_dim = self.get_option("encoder.dim_feedforward")
+        if not self.feedforward_dim:
+            # set ff dim to 4 times of embeddings dim, as in Vaswani 2017 and Devlin 2019
+            self.feedforward_dim = self.emb_dim * 4
+
         dropout = self.get_option("encoder.dropout")
         if dropout < 0.0:
-            if config.get("job.auto_correct"):
+            if config.get("train.auto_correct"):
                 config.log(
                     "Setting {}.encoder.dropout to 0., "
                     "was set to {}.".format(configuration_key, dropout)
                 )
                 dropout = 0.0
 
-        self.encoder_layer = torch.nn.TransformerEncoderLayer(
+        encoder_layer = torch.nn.TransformerEncoderLayer(
             d_model=self.emb_dim,
             nhead=self.get_option("encoder.nhead"),
-            dim_feedforward=self.get_option("encoder.dim_feedforward"),
+            dim_feedforward=self.feedforward_dim,
             dropout=dropout,
             activation=self.get_option("encoder.activation"),
         )
         self.encoder = torch.nn.TransformerEncoder(
-            self.encoder_layer, num_layers=self.get_option("encoder.num_layers")
+            encoder_layer, num_layers=self.get_option("encoder.num_layers")
         )
         for layer in self.encoder.layers:
             self.initialize(layer.linear1.weight.data)
@@ -69,7 +74,7 @@ class TransformerScorer(RelationalScorer):
                 self.initialize(layer.self_attn.k_proj_weight)
                 self.initialize(layer.self_attn.v_proj_weight)
 
-    def score_emb(self, s_emb, p_emb, o_emb, combine: str):
+    def score_emb(self, s_emb, p_emb, o_emb, combine: str, **kwargs):
         if combine not in ["sp_", "spo"]:
             raise ValueError(
                 "Combine {} not supported in Transformer's score function".format(
@@ -124,7 +129,7 @@ class Transformer(KgeModel):
             init_for_load_only=init_for_load_only,
         )
 
-    def score_spo(self, s: Tensor, p: Tensor, o: Tensor, direction=None) -> Tensor:
+    def score_spo(self, s: Tensor, p: Tensor, o: Tensor, direction=None, **kwargs) -> Tensor:
         # We overwrite this method to ensure that ConvE only predicts towards objects.
         # If Transformer is wrapped in a reciprocal relations model, this will always be
         # the case.

@@ -17,6 +17,7 @@ class RescalScorer(RelationalScorer):
         p_emb: torch.Tensor,
         o_emb: torch.Tensor,
         combine: str,
+        **kwargs,
     ):
         batch_size = p_emb.size(0)
         entity_size = s_emb.size(-1)

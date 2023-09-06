@@ -15,7 +15,7 @@ transformer:
   encoder:
     # see torch.nn.TransformerEncodeLayer
     nhead: 8                     # the number of heads
-    dim_feedforward: 1280        # the dimension of the feedforward network model
+    dim_feedforward: 0        # the dimension of the feedforward network model
     dropout: 0.1
     activation: relu             # relu or gelu
 
