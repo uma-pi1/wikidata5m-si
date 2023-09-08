@@ -1,68 +1,45 @@
-# A Benchmark for Semi-Inductive Link Prediction in Knowledge Graphs
+## SimKGC
 
-This is the benchmark, code, and configuration accompanying the paper [A Benchmark for Semi-Inductive Link Prediction in Knowledge Graphs]().
-The main branch holds code/information about the benchmark itself. 
-The following branches hold code and configuration for the separate models evaluated in the study.
+This branch contains the slightly adapted code of the paper
+"[SimKGC: Simple Contrastive Knowledge Graph Completion with Pre-trained Language Models](https://aclanthology.org/2022.acl-long.295.pdf)".
 
-- [KGT5 \& KGT5-context](https://github.com/uma-pi1/kge/tree/kgt5-context)
-- [ComplEx + Bias + FoldIn](https://github.com/uma-pi1/kge/tree/complex_fold_in)
-- [DisMult ERAvg](https://github.com/uma-pi1/kge/tree/odistmult)
-- [DisMult ERAvg + Mention/Description](https://github.com/uma-pi1/kge/tree/odistmult_descriptions)
-- [HittER](https://github.com/uma-pi1/kge/tree/hitter)
+## Requirements
+* python>=3.7
+* torch>=1.6 (for mixed precision training)
+* transformers>=4.15
+* pandas
+* tqdm
 
-
-## Benchmark
-
-### Download data
+### Preprocess
 
 ```
-mkdir data
-cd data
-curl -O https://web.informatik.uni-mannheim.de/pi1/kge-datasets/wikidata5m_v3_semi_inductive.tar.gz
-tar -zxvf wikidata5m_v3_semi_inductive.tar.gz
+python convert_data_to_simkgc_format.py
 ```
 
-### Generate Few Shot Tasks
 
-- use the file `prepare_few_shot.py`
-- create a `few_shot_set_creator` object
-	- `dataset_name`: (str) name of the dataset
-      - default: wikidata5m_v3_semi_inductive
-	- `use_invese`: (bool) whether to use inverse relations
-      - default: False
-      - if True: for all triples where the unseen entity is in the object slot, increase relation id by num-relations and invert triple
-	- `split`: (str) which split to use
-      - default: valid
-	- `context_selection`: (str) which context\_selection technique to use
-      - default: most\_common
-      - options: most\_common, least\_common, random
+### Train
 
 ```
-few_shot_set_creator = FewShotSetCreator(
-	dataset_name="wikidata5m_v3_semi_inductive",
-	use_inverse=True,
-	split="test"
-)
+OUTPUT_DIR=./checkpoint/wikidata5m-si/ bash scripts/train_wikidata5m_si.sh
 ```
 
-- generate the data using the `few_shot_set_creator`
-	- `num_shots`: (int) the number of shots to use (between 0 and 10)
+### Evaluate Transductive
 
 ```
-data = few_shot_set_creator.create_few_shot_dataset(num_shots=5)
+bash scripts/eval_wikidata5m_si_transductive.sh ./checkpoint/wikidata5m_si/model_last.mdl
 ```
 
-- evaluation is performed in direction unseen to seen
-- output format looks like this
+### Evaluate Semi-Inductive
+
+We evaluate separately for head- and tail-prediction.
+SimKGC outputs automatically performance for both directions separately.
+For calculation of final MRR calculate the weighted average of the corresponding head and tail results.
+(Weight in terms of triples per test file.)
+
 ```
-[
-{
-	"unseen_entity": <id of unseen entity>,
-	"unseen_slot": <slot of unseen entity: 0 for head/subject, 2 for tail/object>,
-	"triple: <[s, p, o]>,
-	"context: <[unseen_entity_id, unseen_entity_slot, s, p, o]>
-},
-...
+bash scripts/eval_wikidata5m_si_head_pred.sh ./checkpoint/wikidata5m_si/model_last.mdl
+```
 
-]
-
+```
+bash scripts/eval_wikidata5m_si_tail_pred.sh ./checkpoint/wikidata5m_si/model_last.mdl
+```
