@@ -4,11 +4,11 @@ This is the benchmark, code, and configuration accompanying the paper [A Benchma
 The main branch holds code/information about the benchmark itself. 
 The following branches hold code and configuration for the separate models evaluated in the study.
 
-- [KGT5 \& KGT5-context](https://github.com/uma-pi1/kge/tree/kgt5-context)
-- [ComplEx + Bias + FoldIn](https://github.com/uma-pi1/kge/tree/complex_fold_in)
-- [DisMult ERAvg](https://github.com/uma-pi1/kge/tree/odistmult)
-- [DisMult ERAvg + Mention/Description](https://github.com/uma-pi1/kge/tree/odistmult_descriptions)
-- [HittER](https://github.com/uma-pi1/kge/tree/hitter)
+- [KGT5 \& KGT5-context](https://github.com/uma-pi1/wikidata5m-si/tree/kgt5-context)
+- [ComplEx + Bias + FoldIn](https://github.com/uma-pi1/wikidata5m-si/tree/complex_fold_in)
+- [DisMult ERAvg](https://github.com/uma-pi1/wikidata5m-si/tree/odistmult)
+- [DisMult ERAvg + Mention/Description](https://github.com/uma-pi1/wikidata5m-si/tree/odistmult_descriptions)
+- [HittER](https://github.com/uma-pi1/wikidata5m-si/tree/hitter)
 
 
 ## Benchmark
@@ -18,8 +18,8 @@ The following branches hold code and configuration for the separate models evalu
 ```
 mkdir data
 cd data
-curl -O https://web.informatik.uni-mannheim.de/pi1/kge-datasets/wikidata5m_v3_semi_inductive.tar.gz
-tar -zxvf wikidata5m_v3_semi_inductive.tar.gz
+curl -O https://web.informatik.uni-mannheim.de/pi1/kge-datasets/wikidata5m-si.tar.gz
+tar -zxvf wikidata5m-si.tar.gz
 ```
 
 ### Generate Few Shot Tasks
