@@ -19,8 +19,8 @@ pip install -r requirements.txt
 ```
 mkdir data
 cd data
-curl -O https://web.informatik.uni-mannheim.de/pi1/kge-datasets/wikidata5m_v3_semi_inductive.tar.gz
-tar -zxvf wikidata5m_v3_semi_inductive.tar.gz
+curl -O https://web.informatik.uni-mannheim.de/pi1/kge-datasets/wikidata5m-si.tar.gz
+tar -zxvf wikidata5m-si.tar.gz
 ```
 
 
