@@ -4,7 +4,7 @@ set -x
 set -e
 
 model_path="bert"
-task="wikidata5m-si"
+task="wikidata5m_si"
 DIR="$( cd "$( dirname "$0" )" && cd .. && pwd )"
 echo "working directory: ${DIR}"
 if [ -z "$DATA_DIR" ]; then

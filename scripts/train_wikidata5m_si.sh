@@ -3,7 +3,7 @@
 set -x
 set -e
 
-TASK="wikidata5m-si"
+TASK="wikidata5m_si"
 if [[ $# -ge 1 && ! "$1" == "--"* ]]; then
     TASK=$1
     shift

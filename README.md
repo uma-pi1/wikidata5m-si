@@ -20,7 +20,7 @@ python convert_data_to_simkgc_format.py
 ### Train
 
 ```
-OUTPUT_DIR=./checkpoint/wikidata5m-si/ bash scripts/train_wikidata5m_si.sh
+OUTPUT_DIR=./checkpoint/wikidata5m_si/ bash scripts/train_wikidata5m_si.sh
 ```
 
 ### Evaluate Transductive

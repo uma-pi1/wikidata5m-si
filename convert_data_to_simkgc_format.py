@@ -5,8 +5,8 @@ import numpy as np
 from tqdm import tqdm
 
 if __name__ == '__main__':
-    input_folder = "data/wikidata5m_v3_semi_inductive"
-    output_folder = "data/wikidata5m-si"
+    input_folder = "data/wikidata5m-si"
+    output_folder = "data/wikidata5m_si"
     if not os.path.exists(output_folder):
         os.mkdir(output_folder)
     # create entities.json
