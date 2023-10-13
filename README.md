@@ -21,16 +21,15 @@ pip install -e .
 ```
 mkdir data
 cd data
-curl -O https://web.informatik.uni-mannheim.de/pi1/kge-datasets/wikidata5m_v3_semi_inductive.tar.gz
-tar -zxvf wikidata5m_v3_semi_inductive.tar.gz
+curl -O https://web.informatik.uni-mannheim.de/pi1/kge-datasets/wikidata5m-si.tar.gz
+tar -zxvf wikidata5m-si.tar.gz
 ```
 
-#### Download mention and description embedding
+#### Create mention and description embeddings
 
 ```
-cd data/wikidata5m_v3_semi_inductive
-curl -O https://web.informatik.uni-mannheim.de/pi1/kge-datasets/wikidata5m-si/description_embs.pt
-curl -O https://web.informatik.uni-mannheim.de/pi1/kge-datasets/wikidata5m-si/mention_embs.pt
+python create_mpnet_embeddings.py --mentions_only
+python create_mpnet_embeddings.py
 ```
 
 ### Training
