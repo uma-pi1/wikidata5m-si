@@ -1,6 +1,6 @@
 # A Benchmark for Semi-Inductive Link Prediction in Knowledge Graphs
 
-This is the benchmark, code, and configuration accompanying the paper [A Benchmark for Semi-Inductive Link Prediction in Knowledge Graphs]().
+This is the benchmark, code, and configuration accompanying the paper [A Benchmark for Semi-Inductive Link Prediction in Knowledge Graphs](https://arxiv.org/pdf/2310.11917.pdf).
 
 ## DistMult + ERAvg
 
