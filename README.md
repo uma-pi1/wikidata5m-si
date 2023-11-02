@@ -1,6 +1,6 @@
 # A Benchmark for Semi-Inductive Link Prediction in Knowledge Graphs
 
-This is the benchmark, code, and configuration accompanying the paper [A Benchmark for Semi-Inductive Link Prediction in Knowledge Graphs]().
+This is the benchmark, code, and configuration accompanying the paper [A Benchmark for Semi-Inductive Link Prediction in Knowledge Graphs](https://arxiv.org/pdf/2310.11917.pdf).
 The main branch holds code/information about the benchmark itself. 
 The following branches hold code and configuration for the separate models evaluated in the study.
 
@@ -65,4 +65,24 @@ data = few_shot_set_creator.create_few_shot_dataset(num_shots=5)
 ...
 
 ]
+
+
+# Create Benchmarks Based on Other Graphs
+
+- to create similar benchmark based on other graphs use the file `create_semi_inductive_dataset.py`
+- this file was used to create wikidata5m-si based on wikidata5m
+
+# How to Cite
+
+- if you use the proposed benchmark, the provided code or insights presented in the paper please cite.
+
+```
+@inproceedings{kochsiek2023benchmark,                                                                                                                                                                  
+title={A Benchmark for Semi-Inductive Link Prediction in Knowledge Graphs},
+author={Kochsiek, Adrian and Gemulla, Rainer},
+booktitle={Findings of the Association for Computational Linguistics: EMNLP 2023},
+year={2023}
+}
+```
+
 
