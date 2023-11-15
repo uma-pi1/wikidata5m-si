@@ -18,7 +18,7 @@ The following branches hold code and configuration for the separate models evalu
 ```
 mkdir data
 cd data
-curl -O https://web.informatik.uni-mannheim.de/pi1/kge-datasets/wikidata5m-si.tar.gz
+curl -O https://madata.bib.uni-mannheim.de/424/2/wikidata5m-si.tar.gz
 tar -zxvf wikidata5m-si.tar.gz
 ```
 
