@@ -1,6 +1,6 @@
 # A Benchmark for Semi-Inductive Link Prediction in Knowledge Graphs
 
-This is the benchmark, code, and configuration accompanying the paper [A Benchmark for Semi-Inductive Link Prediction in Knowledge Graphs](https://arxiv.org/pdf/2310.11917.pdf).
+This is the benchmark, code, and configuration accompanying the EMNLP-Findings 2023 paper [A Benchmark for Semi-Inductive Link Prediction in Knowledge Graphs](https://arxiv.org/pdf/2310.11917.pdf).
 The main branch holds code/information about the benchmark itself. 
 The following branches hold code and configuration for the separate models evaluated in the study.
 
